@@ -1,0 +1,26 @@
+:root {
+	--color-background: #1a1a1a;
+	--color-surface: #2a2a2a;
+	--color-primary: #3a7bd5;
+	--color-text: #e0e0e0;
+	--color-text-secondary: #a0a0a0;
+}
+
+* {
+	box-sizing: border-box;
+	margin: 0;
+	padding: 0;
+}
+
+html, body {
+	height: 100%;
+	font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+	background-color: var(--color-background);
+	color: var(--color-text);
+}
+
+#app {
+	height: 100vh;
+	display: flex;
+	flex-direction: column;
+}

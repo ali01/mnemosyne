@@ -1,27 +1,21 @@
 package api
 
 import (
-	"database/sql"
-
 	"github.com/gin-gonic/gin"
-	"github.com/redis/go-redis/v9"
 )
 
-func SetupRoutes(router *gin.Engine, db *sql.DB, redis *redis.Client) {
+func SetupRoutes(router *gin.Engine) {
 	router.Use(CORSMiddleware())
 
 	api := router.Group("/api/v1")
 	{
 		api.GET("/health", healthCheck)
 		
-		api.GET("/graph", getGraph(db, redis))
-		api.GET("/graph/viewport", getViewportNodes(db, redis))
-		api.PUT("/nodes/:id/position", updateNodePosition(db, redis))
-		api.GET("/nodes/:id", getNode(db))
-		api.GET("/nodes/:id/content", getNodeContent(db))
-		
-		api.GET("/clusters/:level", getClusters(db, redis))
-		api.POST("/clusters/compute", computeClusters(db, redis))
+		api.GET("/graph", getGraph())
+		api.GET("/graph/viewport", getViewportNodes())
+		api.PUT("/nodes/:id/position", updateNodePosition())
+		api.GET("/nodes/:id", getNode())
+		api.GET("/nodes/:id/content", getNodeContent())
 	}
 }
 

@@ -1,21 +1,17 @@
-.PHONY: help dev-setup dev-backend dev-frontend dev db-up db-down db-migrate build test clean
+.PHONY: help dev-setup dev-backend dev-frontend dev build test clean
 
 help:
 	@echo "Available commands:"
-	@echo "  make dev-setup    - Install dependencies and set up development environment"
+	@echo "  make dev-setup    - Install dependencies"
 	@echo "  make dev          - Run both backend and frontend in development mode"
 	@echo "  make dev-backend  - Run backend server"
 	@echo "  make dev-frontend - Run frontend development server"
-	@echo "  make db-up        - Start PostgreSQL and Redis containers"
-	@echo "  make db-down      - Stop database containers"
-	@echo "  make db-migrate   - Run database migrations"
 	@echo "  make build        - Build both backend and frontend for production"
 	@echo "  make test         - Run all tests"
 	@echo "  make clean        - Clean build artifacts"
 
-dev-setup: db-up
+dev-setup:
 	@echo "Setting up development environment..."
-	@if [ ! -f .env ]; then cp .env.example .env; fi
 	cd backend && go mod download
 	cd frontend && npm install
 	@echo "Setup complete! Run 'make dev' to start development servers"
@@ -29,18 +25,6 @@ dev-backend:
 
 dev-frontend:
 	cd frontend && npm run dev
-
-db-up:
-	docker-compose up -d postgres redis
-	@echo "Waiting for databases to be ready..."
-	@sleep 5
-
-db-down:
-	docker-compose down
-
-db-migrate:
-	@echo "Running database migrations..."
-	migrate -path database/migrations -database "postgresql://mnemosyne:mnemosyne@localhost:5432/mnemosyne?sslmode=disable" up
 
 build:
 	@echo "Building backend..."

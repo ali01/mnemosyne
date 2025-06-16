@@ -1,27 +1,58 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
-	import Graph from 'graphology';
-	import Sigma from 'sigma';
-	import type { Settings } from 'sigma/settings';
 	import { graphStore } from '$lib/stores/graph';
 	
-	let container: HTMLDivElement;
-	let sigma: Sigma | null = null;
+	let container;
+	let sigma = null;
+	let Graph;
+	let Sigma;
 	
 	onMount(async () => {
+		// Import graph libraries only on client side
+		const graphologyModule = await import('graphology');
+		const sigmaModule = await import('sigma');
+		Graph = graphologyModule.default;
+		Sigma = sigmaModule.default;
+		
 		const graph = new Graph();
 		
-		// TODO: Load graph data from API
-		// For now, add some sample nodes
-		graph.addNode('1', { x: 0, y: 0, size: 10, label: 'Sample Node 1', color: '#3a7bd5' });
-		graph.addNode('2', { x: 100, y: 100, size: 10, label: 'Sample Node 2', color: '#3a7bd5' });
-		graph.addEdge('1', '2');
+		// Load graph data from API
+		try {
+			const response = await fetch('/api/v1/graph?level=0');
+			const data = await response.json();
+			
+			// Add nodes
+			data.nodes.forEach((node) => {
+				graph.addNode(node.id, {
+					x: node.position.x,
+					y: node.position.y,
+					size: 10,
+					label: node.title,
+					color: getNodeColor(node.metadata?.type),
+				});
+			});
+			
+			// Add edges
+			data.edges.forEach((edge) => {
+				try {
+					graph.addEdge(edge.source, edge.target, {
+						weight: edge.weight,
+						// Remove type for now - Sigma needs special configuration for edge types
+					});
+				} catch (e) {
+					// Skip if nodes don't exist
+				}
+			});
+		} catch (error) {
+			console.error('Failed to load graph:', error);
+		}
 		
-		const settings: Partial<Settings> = {
+		const settings = {
 			renderLabels: true,
 			renderEdgeLabels: false,
 			defaultNodeColor: '#3a7bd5',
 			defaultEdgeColor: '#666',
+			labelColor: { color: '#ffffff' },
 			minZoomRatio: 0.1,
 			maxZoomRatio: 10,
 		};
@@ -30,16 +61,22 @@
 		
 		// Handle node clicks
 		sigma.on('clickNode', ({ node }) => {
-			console.log('Clicked node:', node);
-			// TODO: Open node content viewer
-		});
-		
-		// Handle viewport changes for dynamic loading
-		sigma.getCamera().on('updated', () => {
-			const viewport = sigma!.getCamera().getViewport();
-			// TODO: Load nodes within viewport
+			graphStore.selectNode(node);
 		});
 	});
+	
+	function getNodeColor(type) {
+		switch (type) {
+			case 'core':
+				return '#e74c3c';
+			case 'sub':
+				return '#3498db';
+			case 'detail':
+				return '#2ecc71';
+			default:
+				return '#3a7bd5';
+		}
+	}
 	
 	onDestroy(() => {
 		if (sigma) {

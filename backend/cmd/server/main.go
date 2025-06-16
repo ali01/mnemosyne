@@ -10,27 +10,12 @@ import (
 	"time"
 
 	"github.com/ali01/mnemosyne/internal/api"
-	"github.com/ali01/mnemosyne/internal/storage"
 	"github.com/gin-gonic/gin"
-	"github.com/joho/godotenv"
 )
 
 func main() {
-	if err := godotenv.Load(); err != nil {
-		log.Println("No .env file found")
-	}
-
-	db, err := storage.NewPostgresDB()
-	if err != nil {
-		log.Fatal("Failed to connect to database:", err)
-	}
-	defer db.Close()
-
-	redis := storage.NewRedisClient()
-	defer redis.Close()
-
 	router := gin.Default()
-	api.SetupRoutes(router, db, redis)
+	api.SetupRoutes(router)
 
 	srv := &http.Server{
 		Addr:    ":8080",

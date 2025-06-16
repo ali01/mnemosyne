@@ -1,7 +1,3 @@
-# Environment files
-.env
-.env.local
-
 # Dependencies
 node_modules/
 vendor/
@@ -40,10 +36,6 @@ coverage/
 *.dylib
 *.test
 go.sum
-
-# Database
-*.db
-*.sqlite
 
 # Temporary files
 tmp/

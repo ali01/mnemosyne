@@ -63,6 +63,42 @@
 		sigma.on('clickNode', ({ node }) => {
 			graphStore.selectNode(node);
 		});
+		
+		// Handle node dragging
+		let draggedNode = null;
+		let isDragging = false;
+		
+		sigma.on('downNode', (e) => {
+			draggedNode = e.node;
+			isDragging = true;
+			sigma.getGraph().setNodeAttribute(draggedNode, 'highlighted', true);
+		});
+		
+		sigma.getMouseCaptor().on('mousemovebody', (e) => {
+			if (isDragging && draggedNode) {
+				// Get the pointer position relative to the sigma container
+				const pos = sigma.viewportToGraph(e);
+				sigma.getGraph().setNodeAttribute(draggedNode, 'x', pos.x);
+				sigma.getGraph().setNodeAttribute(draggedNode, 'y', pos.y);
+				// Prevent the default camera movement
+				e.preventSigmaDefault();
+				e.original.preventDefault();
+				e.original.stopPropagation();
+			}
+		});
+		
+		sigma.getMouseCaptor().on('mouseup', () => {
+			if (draggedNode) {
+				sigma.getGraph().setNodeAttribute(draggedNode, 'highlighted', false);
+			}
+			draggedNode = null;
+			isDragging = false;
+		});
+		
+		sigma.on('clickStage', () => {
+			draggedNode = null;
+			isDragging = false;
+		});
 	});
 	
 	function getNodeColor(type) {

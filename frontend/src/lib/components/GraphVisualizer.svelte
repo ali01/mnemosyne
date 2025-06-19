@@ -1,11 +1,12 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
 	import { graphStore } from '$lib/stores/graph';
+	import type { Sigma as SigmaType } from 'sigma';
 	
-	let container;
-	let sigma = null;
-	let Graph;
-	let Sigma;
+	let container: HTMLDivElement;
+	let sigma: SigmaType;
+	let Graph: any;
+	let Sigma: any;
 	
 	onMount(async () => {
 		// Import graph libraries only on client side
@@ -22,7 +23,7 @@
 			const data = await response.json();
 			
 			// Add nodes
-			data.nodes.forEach((node) => {
+			data.nodes.forEach((node: any) => {
 				graph.addNode(node.id, {
 					x: node.position.x,
 					y: node.position.y,
@@ -33,7 +34,7 @@
 			});
 			
 			// Add edges
-			data.edges.forEach((edge) => {
+			data.edges.forEach((edge: any) => {
 				try {
 					graph.addEdge(edge.source, edge.target, {
 						weight: edge.weight,
@@ -65,17 +66,19 @@
 		});
 		
 		// Handle node dragging
-		let draggedNode = null;
+		let draggedNode: string | null = null;
 		let isDragging = false;
 		
 		sigma.on('downNode', (e) => {
 			draggedNode = e.node;
 			isDragging = true;
-			sigma.getGraph().setNodeAttribute(draggedNode, 'highlighted', true);
+			if (sigma) {
+				sigma.getGraph().setNodeAttribute(draggedNode, 'highlighted', true);
+			}
 		});
 		
-		sigma.getMouseCaptor().on('mousemovebody', (e) => {
-			if (isDragging && draggedNode) {
+		sigma.getMouseCaptor().on('mousemovebody', (e: any) => {
+			if (isDragging && draggedNode && sigma) {
 				// Get the pointer position relative to the sigma container
 				const pos = sigma.viewportToGraph(e);
 				sigma.getGraph().setNodeAttribute(draggedNode, 'x', pos.x);
@@ -88,7 +91,7 @@
 		});
 		
 		sigma.getMouseCaptor().on('mouseup', () => {
-			if (draggedNode) {
+			if (draggedNode && sigma) {
 				sigma.getGraph().setNodeAttribute(draggedNode, 'highlighted', false);
 			}
 			draggedNode = null;
@@ -101,7 +104,7 @@
 		});
 	});
 	
-	function getNodeColor(type) {
+	function getNodeColor(type: string) {
 		switch (type) {
 			case 'core':
 				return '#e74c3c';
@@ -121,24 +124,21 @@
 	});
 	
 	function handleZoomIn() {
-		if (sigma) {
-			const camera = sigma.getCamera();
-			camera.animatedZoom({ duration: 300 });
-		}
+		if (!sigma) return;
+		const camera = sigma.getCamera();
+		camera.animatedZoom({ duration: 300 });
 	}
 	
 	function handleZoomOut() {
-		if (sigma) {
-			const camera = sigma.getCamera();
-			camera.animatedUnzoom({ duration: 300 });
-		}
+		if (!sigma) return;
+		const camera = sigma.getCamera();
+		camera.animatedUnzoom({ duration: 300 });
 	}
 	
 	function handleReset() {
-		if (sigma) {
-			const camera = sigma.getCamera();
-			camera.animatedReset({ duration: 300 });
-		}
+		if (!sigma) return;
+		const camera = sigma.getCamera();
+		camera.animatedReset({ duration: 300 });
 	}
 </script>
 

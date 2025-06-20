@@ -11,10 +11,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ### Backend (Go + Gin)
 - **API Server**: RESTful API at `localhost:8080`
 - **Data Storage**: In-memory with sample data from `backend/data/sample_graph.json`
+- **Git Integration**: Clones and syncs Obsidian vaults from GitHub
 - **Key Directories**:
   - `backend/cmd/server/` - Main server entry point
   - `backend/internal/api/` - HTTP handlers and routes
   - `backend/internal/models/` - Data models
+  - `backend/internal/git/` - Git repository management
   - `backend/data/` - Sample graph data
 
 ### Frontend (SvelteKit + Sigma.js)
@@ -32,12 +34,23 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 # Backend
 cd backend
 go mod download
+
+# Create config.yaml from example
+cp config.example.yaml config.yaml
+# Edit config.yaml to point to your Obsidian vault repository
+
 go run cmd/server/main.go
 
 # Frontend (in another terminal)
 cd frontend
 npm install
 npm run dev
+```
+
+### Testing Git Integration
+```bash
+cd backend
+go run cmd/test-git/main.go config.yaml
 ```
 
 ### Build & Deploy
@@ -56,8 +69,9 @@ npm run build
 1. **Simplified Architecture**: No database dependencies for easy setup and development
 2. **In-Memory Storage**: Node positions are stored in memory during runtime
 3. **Sample Data**: Graph data loaded from JSON file for testing
-4. **Read-Only Vault Access**: The `walros-obsidian` directory is read-only reference data
+4. **Read-Only Vault Access**: The vault repository is cloned as read-only reference data
 5. **Git Clone Strategy**: Using local Git clone for GitHub-hosted vaults (better performance, no rate limits)
+6. **YAML Configuration**: Uses `config.yaml` instead of environment variables for cleaner configuration management
 
 ## Obsidian Vault Integration Plan
 
@@ -73,25 +87,31 @@ We're using the Git Clone approach for accessing GitHub-hosted Obsidian vaults:
 
 ### Step-by-Step Implementation Plan
 
-#### Phase 1: Git Integration Setup
+#### Phase 1: Git Integration Setup ✅ COMPLETED
 1. **Add Git dependencies**
    ```bash
    go get github.com/go-git/go-git/v5
-   go get gopkg.in/yaml.v3  # For frontmatter parsing
+   go get gopkg.in/yaml.v3
    ```
 
-2. **Create Git manager** (`backend/internal/git/manager.go`)
-   - Clone repository on startup
-   - Handle authentication (SSH keys or tokens)
-   - Implement pull with retry logic
-   - Add conflict resolution (force pull for read-only)
+2. **Create Git manager** (`backend/internal/git/`)
+   - ✅ `manager.go`: Git operations (clone, pull, sync)
+   - ✅ `config.go`: YAML configuration loading
+   - ✅ `errors.go`: Error definitions
+   - ✅ Thread-safe operations with mutex locks
+   - ✅ Automatic retry and error handling
+   - ✅ Force pull for read-only vault access
 
 3. **Configuration setup**
-   - Add environment variables:
-     - `VAULT_REPO_URL`: GitHub repository URL
-     - `VAULT_BRANCH`: Branch to track (default: main)
-     - `VAULT_LOCAL_PATH`: Where to clone locally
-   - Update server initialization to clone on startup
+   - ✅ YAML-based configuration (`config.yaml`)
+   - ✅ Example configuration provided
+   - ✅ Support for SSH authentication
+   - ✅ Configurable sync intervals
+   - ✅ Test program to verify Git operations
+
+4. **Current limitations**
+   - ⚠️ No real-time updates (relies on periodic sync)
+   - ⚠️ No webhook support yet for instant GitHub updates
 
 #### Phase 2: Vault Parser Implementation
 1. **Create vault parser package** (`backend/internal/vault/`)
@@ -219,22 +239,28 @@ We're using the Git Clone approach for accessing GitHub-hosted Obsidian vaults:
   - Topic overviews (prefix `~`) - central hub positioning
   - Open questions (tagged with `open-question`) - different color
 
-### Directory Structure Example
+### Directory Structure
 ```
 backend/
+├── cmd/
+│   ├── server/             # Main server entry point
+│   └── test-git/           # Git integration test program
+├── config.example.yaml     # Example configuration file
 ├── internal/
-│   ├── git/
-│   │   ├── manager.go      # Git operations
-│   │   └── config.go       # Git configuration
-│   ├── vault/
-│   │   ├── parser.go       # Main parser
-│   │   ├── markdown.go     # Markdown processor
-│   │   ├── wikilink.go     # Link extraction
-│   │   ├── frontmatter.go  # YAML parsing
-│   │   ├── graph_builder.go # Graph construction
-│   │   └── cache.go        # Caching layer
-│   └── models/
-│       └── vault.go        # Vault data models
+│   ├── api/                # HTTP handlers and routes
+│   ├── git/                # Git integration (COMPLETED)
+│   │   ├── config.go       # YAML configuration & loading
+│   │   ├── errors.go       # Error definitions
+│   │   └── manager.go      # Git operations (clone, pull, sync)
+│   ├── models/             # Data models
+│   └── vault/              # Vault parser (TO BE IMPLEMENTED)
+│       ├── parser.go       # Main parser
+│       ├── markdown.go     # Markdown processor
+│       ├── wikilink.go     # Link extraction
+│       ├── frontmatter.go  # YAML parsing
+│       └── graph_builder.go # Graph construction
+└── data/
+    └── sample_graph.json   # Sample data for testing
 ```
 
 ### Testing Strategy
@@ -243,9 +269,29 @@ backend/
 3. Performance tests with large vaults (50k+ files)
 4. E2E tests for API endpoints
 
-## Future Enhancements
+## Current Status
+
+### ✅ Completed: Phase 1 - Git Integration
+- Git manager with clone, pull, and sync capabilities
+- YAML-based configuration system
+- SSH authentication support
+- Automatic background sync with configurable intervals
+- Thread-safe operations
+- Test program for verification
+
+### ⚠️ Current Limitations
+- No real-time updates (relies on periodic sync every 5 minutes)
+- No webhook support yet for instant GitHub updates
+
+### 🚧 Next Steps
+- Phase 2: Implement vault parser to extract nodes and edges from markdown files
+- Phase 3: Build graph structure from parsed vault
+- Phase 4: Update API to serve real vault data instead of sample JSON
+- Phase 5: Add caching and performance optimizations
+- Phase 6: Implement webhooks for real-time updates
+
+### 📋 Future Enhancements
 - Add persistent storage for node positions
 - Implement graph clustering algorithms
 - Implement viewport-based loading for large graphs
-- Add webhook support for instant GitHub updates
 - Implement search functionality across vault content

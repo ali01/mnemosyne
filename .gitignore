@@ -40,3 +40,10 @@ go.sum
 # Temporary files
 tmp/
 temp/
+
+# Vault clone directory
+memex-clone/
+backend/data/memex-clone/
+
+# Configuration
+backend/config.yaml

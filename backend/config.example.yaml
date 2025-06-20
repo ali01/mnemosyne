@@ -1,0 +1,23 @@
+# Mnemosyne Git Configuration
+# Create a file named config.yaml in the same directory as this file.
+
+# Repository settings
+# For SSH (recommended for private repos):
+# url: git@github.com:username/repository.git
+# For HTTPS (public repos):
+url: https://github.com/octocat/Hello-World.git
+
+branch: master
+local_path: ./vault_clone
+
+# Authentication
+# For SSH authentication (leave blank to use default SSH keys):
+# ssh_key_path: ~/.ssh/id_rsa  # Or ~/.ssh/id_ed25519
+
+# Sync settings
+auto_sync: true
+sync_interval: 5m # Valid time units: s, m, h
+
+# Performance settings
+shallow_clone: true # Faster clone, no history needed for visualization
+single_branch: true # Only clone the specified branch

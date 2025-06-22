@@ -35,7 +35,6 @@ coverage/
 *.so
 *.dylib
 *.test
-go.sum
 
 # Temporary files
 tmp/

@@ -1,0 +1,259 @@
+name: CI
+
+# Run on pushes to main/develop and all PRs to main
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  GO_VERSION: '1.23'
+  NODE_VERSION: '20'
+
+jobs:
+  backend-tests:
+    name: Backend Tests
+    runs-on: ubuntu-latest
+    
+    # Spin up a PostgreSQL container for integration tests
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: mnemosyne_test
+          POSTGRES_PASSWORD: test_password
+          POSTGRES_DB: mnemosyne_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: ${{ env.GO_VERSION }}
+    
+    - name: Cache Go modules
+      uses: actions/cache@v4
+      with:
+        path: ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }} # Cache based on go.sum
+        restore-keys: |
+          ${{ runner.os }}-go-
+    
+    - name: Install dependencies
+      run: |
+        cd backend
+        go mod download
+    
+    - name: Run tests
+      env:
+        DB_HOST: localhost
+        DB_PORT: 5432
+        DB_USER: mnemosyne_test
+        DB_PASSWORD: test_password
+        DB_NAME: mnemosyne_test
+        DB_SSLMODE: disable
+      run: |
+        cd backend
+        go test -v -race -coverprofile=coverage.out ./... # -race detects data races
+    
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./backend/coverage.out
+        flags: backend
+        name: backend-coverage
+    
+    - name: Run benchmarks
+      run: |
+        cd backend
+        go test -bench=. -benchmem -run=^$ ./internal/vault/... | tee benchmark.txt # -run=^$ skips normal tests
+    
+    - name: Upload benchmark results
+      uses: actions/upload-artifact@v4
+      with:
+        name: benchmark-results
+        path: backend/benchmark.txt
+
+  frontend-tests:
+    name: Frontend Tests
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+        cache-dependency-path: frontend/package-lock.json
+    
+    - name: Install dependencies
+      run: |
+        cd frontend
+        npm ci
+    
+    - name: Run type checking
+      run: |
+        cd frontend
+        npm run check
+    
+    # Frontend tests not implemented yet - skipping for now
+    # - name: Run tests
+    #   run: |
+    #     cd frontend
+    #     npm test
+    
+    - name: Build application
+      run: |
+        cd frontend
+        npm run build
+    
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: frontend-build
+        path: frontend/build
+
+  lint:
+    name: Lint Code
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: ${{ env.GO_VERSION }}
+    
+    - name: golangci-lint
+      uses: golangci/golangci-lint-action@v6
+      with:
+        version: latest
+        working-directory: backend
+        args: --timeout=5m --config=.golangci.yml --out-format=colored-line-number
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+        cache-dependency-path: frontend/package-lock.json
+    
+    # Frontend linting not configured yet - skipping for now  
+    # - name: Lint frontend
+    #   run: |
+    #     cd frontend
+    #     npm ci
+    #     npm run lint
+
+  security-scan:
+    name: Security Scanning
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Run Gosec Security Scanner
+      uses: securego/gosec@master
+      with:
+        args: '-no-fail -fmt sarif -out gosec-results.sarif ./backend/...'
+      continue-on-error: true
+    
+    - name: Check if Gosec SARIF file exists
+      id: gosec-sarif-check
+      run: |
+        if [ -f gosec-results.sarif ]; then
+          echo "exists=true" >> $GITHUB_OUTPUT
+        else
+          echo "exists=false" >> $GITHUB_OUTPUT
+        fi
+    
+    - name: Upload Gosec SARIF file
+      uses: github/codeql-action/upload-sarif@v3
+      if: steps.gosec-sarif-check.outputs.exists == 'true'
+      with:
+        sarif_file: gosec-results.sarif
+        category: gosec
+      continue-on-error: true
+    
+    - name: Run Trivy vulnerability scanner
+      uses: aquasecurity/trivy-action@master
+      with:
+        scan-type: 'fs'
+        scan-ref: '.'
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+      continue-on-error: true
+    
+    - name: Check if Trivy SARIF file exists
+      id: trivy-sarif-check
+      run: |
+        if [ -f trivy-results.sarif ]; then
+          echo "exists=true" >> $GITHUB_OUTPUT
+        else
+          echo "exists=false" >> $GITHUB_OUTPUT
+        fi
+    
+    - name: Upload Trivy SARIF file
+      uses: github/codeql-action/upload-sarif@v3
+      if: steps.trivy-sarif-check.outputs.exists == 'true'
+      with:
+        sarif_file: trivy-results.sarif
+        category: trivy
+      continue-on-error: true
+
+  integration-tests:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    needs: [backend-tests]  # frontend-tests removed until tests are implemented
+    
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: mnemosyne_test
+          POSTGRES_PASSWORD: test_password
+          POSTGRES_DB: mnemosyne_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: ${{ env.GO_VERSION }}
+    
+    - name: Run integration tests
+      env:
+        DB_HOST: localhost
+        DB_PORT: 5432
+        DB_USER: mnemosyne_test
+        DB_PASSWORD: test_password
+        DB_NAME: mnemosyne_test
+        DB_SSLMODE: disable
+      run: |
+        cd backend
+        go test -v -tags=integration ./...

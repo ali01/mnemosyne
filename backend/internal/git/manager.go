@@ -24,7 +24,7 @@ type Manager struct {
 	lastSync   time.Time
 	syncTicker *time.Ticker
 	stopChan   chan struct{}
-	
+
 	// Callbacks
 	onUpdate func(changedFiles []string) // Called when files change
 }
@@ -34,12 +34,12 @@ func NewManager(config *Config) (*Manager, error) {
 	if err := config.Validate(); err != nil {
 		return nil, err
 	}
-	
+
 	m := &Manager{
 		config:   config,
 		stopChan: make(chan struct{}),
 	}
-	
+
 	return m, nil
 }
 
@@ -47,7 +47,7 @@ func NewManager(config *Config) (*Manager, error) {
 func (m *Manager) Initialize(ctx context.Context) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	// Check if repo already exists
 	if _, err := os.Stat(m.config.LocalPath); err == nil {
 		// Open existing repository
@@ -55,11 +55,11 @@ func (m *Manager) Initialize(ctx context.Context) error {
 		if err != nil {
 			log.Printf("Failed to open existing repo, will re-clone: %v", err)
 			// Remove corrupted repo
-			os.RemoveAll(m.config.LocalPath)
+			_ = os.RemoveAll(m.config.LocalPath) // Ignore cleanup error
 		} else {
 			m.repo = repo
 			log.Printf("Opened existing repository at %s", m.config.LocalPath)
-			
+
 			// Pull latest changes
 			if err := m.pullInternal(ctx); err != nil {
 				log.Printf("Warning: Failed to pull latest changes: %v", err)
@@ -67,10 +67,10 @@ func (m *Manager) Initialize(ctx context.Context) error {
 			return nil
 		}
 	}
-	
+
 	// Clone repository
 	log.Printf("Cloning repository from %s to %s", m.config.RepoURL, m.config.LocalPath)
-	
+
 	cloneOptions := &git.CloneOptions{
 		URL:           m.config.RepoURL,
 		Auth:          m.getAuth(),
@@ -78,20 +78,20 @@ func (m *Manager) Initialize(ctx context.Context) error {
 		SingleBranch:  m.config.SingleBranch,
 		ReferenceName: plumbing.NewBranchReferenceName(m.config.Branch),
 	}
-	
+
 	if m.config.ShallowClone {
 		cloneOptions.Depth = 1
 	}
-	
+
 	repo, err := git.PlainCloneContext(ctx, m.config.LocalPath, false, cloneOptions)
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrCloneFailed, err)
 	}
-	
+
 	m.repo = repo
 	m.lastSync = time.Now()
 	log.Printf("Successfully cloned repository")
-	
+
 	return nil
 }
 
@@ -102,10 +102,10 @@ func (m *Manager) Pull(ctx context.Context) error {
 		return ErrSyncInProgress
 	}
 	defer m.syncMu.Unlock()
-	
+
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	
+
 	return m.pullInternal(ctx)
 }
 
@@ -114,15 +114,15 @@ func (m *Manager) pullInternal(ctx context.Context) error {
 	if m.repo == nil {
 		return ErrRepoNotFound
 	}
-	
+
 	worktree, err := m.repo.Worktree()
 	if err != nil {
 		return err
 	}
-	
+
 	// Get list of files before pull
 	oldFiles := m.getFileList()
-	
+
 	// Pull with force to handle conflicts (read-only vault)
 	err = worktree.PullContext(ctx, &git.PullOptions{
 		RemoteName:    "origin",
@@ -132,30 +132,30 @@ func (m *Manager) pullInternal(ctx context.Context) error {
 		SingleBranch:  m.config.SingleBranch,
 		ReferenceName: plumbing.NewBranchReferenceName(m.config.Branch),
 	})
-	
+
 	if err != nil && err != git.NoErrAlreadyUpToDate {
 		return fmt.Errorf("%w: %v", ErrPullFailed, err)
 	}
-	
+
 	m.lastSync = time.Now()
-	
+
 	// Get list of files after pull
 	newFiles := m.getFileList()
-	
+
 	// Find changed files
 	changedFiles := m.findChangedFiles(oldFiles, newFiles)
-	
+
 	if len(changedFiles) > 0 && m.onUpdate != nil {
 		log.Printf("Detected %d changed files", len(changedFiles))
 		go m.onUpdate(changedFiles)
 	}
-	
+
 	if err == git.NoErrAlreadyUpToDate {
 		log.Printf("Repository is already up to date")
 	} else {
 		log.Printf("Successfully pulled latest changes")
 	}
-	
+
 	return nil
 }
 
@@ -164,12 +164,12 @@ func (m *Manager) StartAutoSync(ctx context.Context) {
 	if !m.config.AutoSync {
 		return
 	}
-	
+
 	m.syncTicker = time.NewTicker(m.config.SyncInterval)
-	
+
 	go func() {
 		log.Printf("Starting auto-sync with interval: %v", m.config.SyncInterval)
-		
+
 		for {
 			select {
 			case <-m.syncTicker.C:
@@ -223,7 +223,7 @@ func (m *Manager) getAuth() transport.AuthMethod {
 		}
 		log.Printf("Failed to load SSH key: %v", err)
 	}
-	
+
 	// No authentication (for public repos)
 	return nil
 }
@@ -231,38 +231,42 @@ func (m *Manager) getAuth() transport.AuthMethod {
 // getFileList returns a map of all files in the repository
 func (m *Manager) getFileList() map[string]time.Time {
 	files := make(map[string]time.Time)
-	
+
 	// Walk the repository directory
 	repoPath := m.config.LocalPath
 	err := filepath.Walk(repoPath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
-		
+
 		// Skip .git directory
 		if info.IsDir() && info.Name() == ".git" {
 			return filepath.SkipDir
 		}
-		
+
 		if !info.IsDir() {
-			relPath, _ := filepath.Rel(m.config.LocalPath, path)
+			relPath, err := filepath.Rel(m.config.LocalPath, path)
+			if err != nil {
+				log.Printf("Warning: failed to get relative path for %s: %v", path, err)
+				return nil // Continue processing other files
+			}
 			files[relPath] = info.ModTime()
 		}
-		
+
 		return nil
 	})
-	
+
 	if err != nil {
 		log.Printf("Error walking repository: %v", err)
 	}
-	
+
 	return files
 }
 
 // findChangedFiles compares two file lists and returns changed files
 func (m *Manager) findChangedFiles(oldFiles, newFiles map[string]time.Time) []string {
 	var changed []string
-	
+
 	// Check for new or modified files
 	for path, newTime := range newFiles {
 		oldTime, exists := oldFiles[path]
@@ -270,13 +274,13 @@ func (m *Manager) findChangedFiles(oldFiles, newFiles map[string]time.Time) []st
 			changed = append(changed, path)
 		}
 	}
-	
+
 	// Check for deleted files
 	for path := range oldFiles {
 		if _, exists := newFiles[path]; !exists {
 			changed = append(changed, path)
 		}
 	}
-	
+
 	return changed
 }

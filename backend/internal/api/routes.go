@@ -4,13 +4,14 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// SetupRoutes configures all API routes for the Gin router
 func SetupRoutes(router *gin.Engine) {
 	router.Use(CORSMiddleware())
 
 	api := router.Group("/api/v1")
 	{
 		api.GET("/health", healthCheck)
-		
+
 		api.GET("/graph", getGraph())
 		api.GET("/graph/viewport", getViewportNodes())
 		api.PUT("/nodes/:id/position", updateNodePosition())
@@ -19,6 +20,7 @@ func SetupRoutes(router *gin.Engine) {
 	}
 }
 
+// CORSMiddleware returns a Gin middleware that handles Cross-Origin Resource Sharing (CORS)
 func CORSMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")

@@ -1,5 +1,7 @@
+// Package models defines data structures for graph nodes, edges, and positions
 package models
 
+// Node represents a single node in the knowledge graph
 type Node struct {
 	ID       string                 `json:"id"`
 	Title    string                 `json:"title"`
@@ -10,12 +12,14 @@ type Node struct {
 	Metadata map[string]interface{} `json:"metadata,omitempty"`
 }
 
+// Position represents the 3D coordinates of a node in the graph visualization
 type Position struct {
 	X float64 `json:"x"`
 	Y float64 `json:"y"`
 	Z float64 `json:"z,omitempty"`
 }
 
+// Edge represents a connection between two nodes in the knowledge graph
 type Edge struct {
 	ID     string  `json:"id"`
 	Source string  `json:"source"`

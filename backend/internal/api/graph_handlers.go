@@ -1,3 +1,4 @@
+// Package api provides HTTP handlers for the Mnemosyne graph visualization API
 package api
 
 import (
@@ -24,7 +25,7 @@ func getGraph() gin.HandlerFunc {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to read sample data"})
 			return
 		}
-		
+
 		var graphData struct {
 			Nodes []struct {
 				ID       string          `json:"id"`
@@ -41,12 +42,12 @@ func getGraph() gin.HandlerFunc {
 				Type   string  `json:"type"`
 			} `json:"edges"`
 		}
-		
+
 		if err := json.Unmarshal(data, &graphData); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to parse sample data"})
 			return
 		}
-		
+
 		// Convert to models and apply any saved positions
 		nodes := make([]models.Node, len(graphData.Nodes))
 		positionsMu.RLock()
@@ -56,7 +57,7 @@ func getGraph() gin.HandlerFunc {
 			if savedPos, exists := nodePositions[n.ID]; exists {
 				position = savedPos
 			}
-			
+
 			nodes[i] = models.Node{
 				ID:       n.ID,
 				Title:    n.Title,
@@ -68,7 +69,7 @@ func getGraph() gin.HandlerFunc {
 			}
 		}
 		positionsMu.RUnlock()
-		
+
 		edges := make([]models.Edge, len(graphData.Edges))
 		for i, e := range graphData.Edges {
 			edges[i] = models.Edge{
@@ -79,7 +80,7 @@ func getGraph() gin.HandlerFunc {
 				Type:   e.Type,
 			}
 		}
-		
+
 		c.JSON(http.StatusOK, gin.H{
 			"nodes": nodes,
 			"edges": edges,
@@ -99,18 +100,18 @@ func getViewportNodes() gin.HandlerFunc {
 func updateNodePosition() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		nodeID := c.Param("id")
-		
+
 		var position models.Position
 		if err := c.ShouldBindJSON(&position); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
-		
+
 		// Save position in memory
 		positionsMu.Lock()
 		nodePositions[nodeID] = position
 		positionsMu.Unlock()
-		
+
 		c.JSON(http.StatusOK, gin.H{
 			"id":       nodeID,
 			"position": position,
@@ -121,14 +122,14 @@ func updateNodePosition() gin.HandlerFunc {
 func getNode() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		nodeID := c.Param("id")
-		
+
 		// Read the graph data to find the node
 		data, err := os.ReadFile("data/sample_graph.json")
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to read data"})
 			return
 		}
-		
+
 		var graphData struct {
 			Nodes []struct {
 				ID    string `json:"id"`
@@ -136,9 +137,12 @@ func getNode() gin.HandlerFunc {
 				Type  string `json:"type"`
 			} `json:"nodes"`
 		}
-		
-		json.Unmarshal(data, &graphData)
-		
+
+		if err := json.Unmarshal(data, &graphData); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to parse data"})
+			return
+		}
+
 		for _, n := range graphData.Nodes {
 			if n.ID == nodeID {
 				c.JSON(http.StatusOK, gin.H{
@@ -149,7 +153,7 @@ func getNode() gin.HandlerFunc {
 				return
 			}
 		}
-		
+
 		c.JSON(http.StatusNotFound, gin.H{"error": "Node not found"})
 	}
 }
@@ -157,10 +161,10 @@ func getNode() gin.HandlerFunc {
 func getNodeContent() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		nodeID := c.Param("id")
-		
+
 		// For now, return sample markdown content
 		content := "# Sample Content\n\nThis is placeholder content for node " + nodeID + ".\n\n## Overview\n\nIn a real implementation, this would load the actual Obsidian note content."
-		
+
 		c.JSON(http.StatusOK, gin.H{
 			"id":      nodeID,
 			"content": content,

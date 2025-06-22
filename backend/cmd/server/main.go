@@ -1,3 +1,4 @@
+// Package main is the entry point for the Mnemosyne HTTP server
 package main
 
 import (
@@ -18,8 +19,9 @@ func main() {
 	api.SetupRoutes(router)
 
 	srv := &http.Server{
-		Addr:    ":8080",
-		Handler: router,
+		Addr:              ":8080",
+		Handler:           router,
+		ReadHeaderTimeout: 30 * time.Second,
 	}
 
 	go func() {
@@ -36,7 +38,8 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(ctx); err != nil {
-		log.Fatal("Server forced to shutdown:", err)
+		log.Printf("Server forced to shutdown: %v", err)
+		os.Exit(1)
 	}
 
 	log.Println("Server exiting")

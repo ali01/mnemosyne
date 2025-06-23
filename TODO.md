@@ -264,3 +264,23 @@ Replace sample data with real vault data. Add management endpoints for vault ope
 - API response times <100ms for graph queries
 - Test coverage remains >90%
 - Zero data loss during re-indexing
+
+## Future Optimizations
+
+### Content Field Lazy Loading
+**Problem**: With 50K nodes, loading full markdown content for all nodes uses significant memory (~100MB for 2KB average content) and slows API responses.
+
+**Proposed Solution**: Implement lazy loading for the `Content` field in VaultNode to improve performance and reduce memory usage.
+
+**Options**:
+1. **Separate Content Table**: Store content in `node_content` table, load on demand
+2. **Field Selection API**: Support `?fields=id,title,node_type` to exclude content unless requested
+3. **Nullable Content**: Make Content a pointer with `ContentLoaded` flag
+
+**Benefits**:
+- Reduce initial graph load time by 80-90%
+- Lower memory footprint for large vaults
+- Faster API responses for graph visualization
+- Better scalability to 50K+ nodes
+
+**Implementation**: Defer until after Phase 4 when we have real-world performance metrics.

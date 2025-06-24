@@ -128,11 +128,21 @@ Content`,
 
 func TestFrontmatterData_HasTag(t *testing.T) {
 	data := &FrontmatterData{
-		Tags: []string{"index", "concept", "ai"},
+		Tags: []string{"index", "concept", "ai", "Open-Question"},
 	}
 
+	// Exact match
 	assert.True(t, data.HasTag("index"))
 	assert.True(t, data.HasTag("concept"))
+	
+	// Case-insensitive matching
+	assert.True(t, data.HasTag("INDEX"))
+	assert.True(t, data.HasTag("Concept"))
+	assert.True(t, data.HasTag("AI"))
+	assert.True(t, data.HasTag("open-question"))
+	assert.True(t, data.HasTag("OPEN-QUESTION"))
+	
+	// Non-existent tags
 	assert.False(t, data.HasTag("missing"))
 	assert.False(t, data.HasTag(""))
 }

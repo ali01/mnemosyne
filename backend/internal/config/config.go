@@ -46,6 +46,9 @@ type GraphConfig struct {
 	// Processing settings
 	BatchSize      int `yaml:"batch_size"`      // Number of files to process at once
 	MaxConcurrency int `yaml:"max_concurrency"` // Max concurrent goroutines
+
+	// Node classification settings
+	NodeClassification NodeClassificationConfig `yaml:"node_classification"`
 }
 
 // LayoutConfig holds graph layout algorithm configuration
@@ -62,6 +65,31 @@ type CacheConfig struct {
 	Enabled       bool          `yaml:"enabled"`
 	TTL           time.Duration `yaml:"ttl"`
 	MaxMemorySize int64         `yaml:"max_memory_size"` // Max memory for cache in bytes
+}
+
+// NodeClassificationConfig holds node type and classification rule configuration
+type NodeClassificationConfig struct {
+	NodeTypes           map[string]NodeTypeConfig      `yaml:"node_types"`
+	ClassificationRules []ClassificationRuleConfig     `yaml:"classification_rules"`
+	DefaultNodeType     string                         `yaml:"default_node_type,omitempty"`
+}
+
+// NodeTypeConfig defines the display properties for a node type
+type NodeTypeConfig struct {
+	DisplayName     string  `yaml:"display_name"`
+	Description     string  `yaml:"description"`
+	Color           string  `yaml:"color"`
+	SizeMultiplier  float64 `yaml:"size_multiplier"`
+}
+
+// ClassificationRuleConfig defines a classification rule
+type ClassificationRuleConfig struct {
+	Name        string `yaml:"name"`
+	Priority    int    `yaml:"priority"`
+	Type        string `yaml:"type"` // tag, filename_prefix, filename_suffix, filename_match, path_contains, regex
+	Pattern     string `yaml:"pattern"`
+	NodeType    string `yaml:"node_type"`
+	Description string `yaml:"description,omitempty"`
 }
 
 // DefaultConfig returns configuration with sensible defaults
@@ -102,6 +130,10 @@ func DefaultConfig() *Config {
 			},
 			BatchSize:      100,
 			MaxConcurrency: 4,
+			NodeClassification: NodeClassificationConfig{
+				NodeTypes:           make(map[string]NodeTypeConfig),
+				ClassificationRules: []ClassificationRuleConfig{},
+			},
 		},
 	}
 }

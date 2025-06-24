@@ -845,17 +845,16 @@ func TestVaultNode_Validation(t *testing.T) {
 			errorFields: []string{"ID", "Title", "FilePath"},
 		},
 		{
-			name: "invalid node type",
+			name: "empty node type",
 			node: VaultNode{
-				ID:        "invalid-type",
-				Title:     "Invalid Type",
-				NodeType:  "invalid",
-				FilePath:  "/invalid.md",
+				ID:        "empty-type",
+				Title:     "Empty Type", 
+				NodeType:  "",  // Empty is valid due to omitempty
+				FilePath:  "/empty-type.md",
 				CreatedAt: time.Now(),
 				UpdatedAt: time.Now(),
 			},
-			shouldError: true,
-			errorFields: []string{"NodeType"},
+			shouldError: false,  // omitempty means empty is valid
 		},
 		{
 			name: "negative degrees",

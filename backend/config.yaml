@@ -1,0 +1,134 @@
+# Mnemosyne Configuration
+
+# Server configuration
+server:
+    host: localhost
+    port: 8080
+
+# Database configuration
+database:
+    host: localhost
+    port: 5432
+    user: mnemosyne
+    password: mnemosyne
+    dbname: mnemosyne
+    sslmode: disable
+
+# Git repository configuration
+git:
+    # Repository settings
+    # For private repos, use SSH URL format:
+    url: git@github.com:ali01/memex.git
+    branch: main
+    local_path: data/memex-clone
+
+    # Authentication
+    # For SSH authentication (leave blank to use default SSH keys):
+    # ssh_key_path: ~/.ssh/id_rsa
+
+    # Sync settings
+    auto_sync: true
+    sync_interval: 5m # Valid time units: s, m, h
+
+    # Performance settings
+    shallow_clone: true # Faster clone, no history needed for visualization
+    single_branch: true
+
+# Graph processing configuration
+graph:
+    # Layout algorithm settings
+    layout:
+        algorithm: force-directed # Options: force-directed, hierarchical
+        iterations: 500 # Number of iterations for force-directed layout
+        initial_temp: 1000.0 # Initial temperature for simulated annealing
+        cooling_rate: 0.95 # Temperature cooling rate
+        optimal_distance: 100.0 # Optimal distance between connected nodes
+
+    # Cache settings
+    cache:
+        enabled: true
+        ttl: 30m # Cache time-to-live
+        max_memory_size: 104857600 # Max memory for cache in bytes (100MB)
+
+    # Processing settings
+    batch_size: 100 # Number of files to process at once
+    max_concurrency: 4 # Max concurrent goroutines for processing
+
+    # Node classification configuration
+    node_classification:
+        # Default node type when no rules match
+        default_node_type: "note"
+
+        # Define node types with display properties
+        node_types:
+            index:
+                display_name: "Index"
+                description: "Central navigation or overview pages"
+                color: "#FF6B6B"
+                size_multiplier: 2.0
+            hub:
+                display_name: "Hub"
+                description: "Connection points linking related concepts"
+                color: "#4ECDC4"
+                size_multiplier: 1.5
+            concept:
+                display_name: "Concept"
+                description: "Core ideas or theoretical concepts"
+                color: "#45B7D1"
+                size_multiplier: 1.2
+            project:
+                display_name: "Project"
+                description: "Active projects or implementations"
+                color: "#96CEB4"
+                size_multiplier: 1.3
+            question:
+                display_name: "Question"
+                description: "Open questions or research topics"
+                color: "#FFEAA7"
+                size_multiplier: 1.1
+            note:
+                display_name: "Note"
+                description: "General notes (default type)"
+                color: "#DFE6E9"
+                size_multiplier: 1.0
+
+        # Classification rules (evaluated in priority order)
+        classification_rules:
+            # Priority 1-20: Tag-based rules (highest priority)
+            - name: "index_tag"
+              priority: 1
+              type: "tag" # Match by frontmatter tag
+              pattern: "index"
+              node_type: "index"
+
+            - name: "open_question_tag"
+              priority: 1
+              type: "tag"
+              pattern: "open-question"
+              node_type: "question"
+
+            # Priority 21-40: Filename-based rules
+            - name: "hub_prefix"
+              priority: 25
+              type: "filename_prefix" # Match filename prefix
+              pattern: "~"
+              node_type: "hub"
+
+            # Priority 41-60: Path-based rules
+            - name: "concepts_directory"
+              priority: 45
+              type: "path_contains" # Match directory in path
+              pattern: "concepts"
+              node_type: "concept"
+
+            - name: "projects_directory"
+              priority: 45
+              type: "path_contains"
+              pattern: "projects"
+              node_type: "project"
+
+            - name: "questions_directory"
+              priority: 45
+              type: "path_contains"
+              pattern: "questions"
+              node_type: "question"

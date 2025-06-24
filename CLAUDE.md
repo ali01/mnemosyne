@@ -40,8 +40,6 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 cd backend
 go mod download
 
-# Create config.yaml from example
-cp config.example.yaml config.yaml
 # Edit config.yaml to point to your Obsidian vault repository
 
 # Set up PostgreSQL database
@@ -145,4 +143,67 @@ graph:
     ttl: 30m
   batch_size: 100
   max_concurrency: 4
+
+  # Node classification configuration
+  node_classification:
+    node_types:
+      index:
+        display_name: "Index"
+        color: "#FF6B6B"
+        size_multiplier: 2.0
+      # ... additional node types
+
+    classification_rules:
+      - name: "index_tag"
+        priority: 1
+        type: "tag"
+        pattern: "index"
+        node_type: "index"
+      # ... additional rules
+```
+
+## Node Classification
+
+The node classification system categorizes vault files into different types for visualization. Node types and classification rules are configured directly in `config.yaml`.
+
+### Node Types
+Each node type can have:
+- `display_name`: Human-readable name
+- `description`: Purpose of this node type
+- `color`: Hex color for visualization
+- `size_multiplier`: Relative size in graph (1.0 = normal)
+
+### Classification Rules
+Rules are evaluated in priority order (lower number = higher priority):
+- **Priority 1-20**: Tag-based rules (e.g., frontmatter tags)
+- **Priority 21-40**: Filename-based rules (e.g., prefix/suffix)
+- **Priority 41-60**: Path-based rules (e.g., directory names)
+- **Priority 61+**: Custom patterns
+
+**Note**: All pattern matching is case-insensitive by design.
+
+### Rule Types
+- `tag`: Match frontmatter tags (case-insensitive)
+- `filename_prefix`: Match start of filename (case-insensitive)
+- `filename_suffix`: Match end of filename excluding .md (case-insensitive)
+- `filename_match`: Exact filename match (case-insensitive)
+- `path_contains`: Directory name anywhere in path (case-insensitive)
+- `regex`: Regular expression on filename (case-insensitive)
+
+### Example: Adding a Custom Node Type
+```yaml
+node_classification:
+  node_types:
+    research:
+      display_name: "Research"
+      description: "Research notes and findings"
+      color: "#9B59B6"
+      size_multiplier: 1.4
+
+  classification_rules:
+    - name: "research_tag"
+      priority: 5
+      type: "tag"
+      pattern: "research"
+      node_type: "research"
 ```

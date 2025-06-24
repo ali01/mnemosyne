@@ -14,7 +14,7 @@ type FrontmatterData struct {
 	Tags       []string               `yaml:"tags"`
 	Related    []string               `yaml:"related"`
 	References []string               `yaml:"references"`
-	Raw        map[string]interface{} // Preserves all frontmatter fields
+	Raw        map[string]any // Preserves all frontmatter fields
 }
 
 var (
@@ -36,7 +36,7 @@ func ExtractFrontmatter(content string) (*FrontmatterData, string, error) {
 	contentWithoutFrontmatter := strings.TrimPrefix(content, matches[0])
 
 	// Parse YAML into raw map first
-	var raw map[string]interface{}
+	var raw map[string]any
 	if err := yaml.Unmarshal([]byte(yamlContent), &raw); err != nil {
 		return nil, "", fmt.Errorf("failed to parse frontmatter YAML: %w", err)
 	}
@@ -49,7 +49,7 @@ func ExtractFrontmatter(content string) (*FrontmatterData, string, error) {
 
 	// Store raw data for preservation (ensure it's not nil)
 	if raw == nil {
-		raw = make(map[string]interface{})
+		raw = make(map[string]any)
 	}
 	data.Raw = raw
 
@@ -73,12 +73,13 @@ func ExtractFrontmatter(content string) (*FrontmatterData, string, error) {
 }
 
 // HasTag checks if the frontmatter contains a specific tag
+// The comparison is case-insensitive
 func (f *FrontmatterData) HasTag(tag string) bool {
 	if f == nil {
 		return false
 	}
 	for _, t := range f.Tags {
-		if t == tag {
+		if strings.EqualFold(t, tag) {
 			return true
 		}
 	}
@@ -113,7 +114,7 @@ func (f *FrontmatterData) GetStringSlice(key string) ([]string, bool) {
 
 	// Handle different YAML representations of arrays
 	switch v := val.(type) {
-	case []interface{}:
+	case []any:
 		result := make([]string, 0, len(v))
 		for _, item := range v {
 			if str, ok := item.(string); ok {

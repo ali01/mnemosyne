@@ -1,7 +1,10 @@
 {
   "permissions": {
     "allow": [
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(go test:*)",
+      "Bash(golangci-lint run:*)",
+      "Bash(git add:*)"
     ],
     "deny": []
   }

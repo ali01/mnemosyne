@@ -29,14 +29,33 @@ jobs:
               with:
                   fetch-depth: 1
 
+            - name: Determine Claude model
+              id: model
+              env:
+                  COMMENT_BODY: ${{ github.event.comment.body || github.event.issue.body || github.event.review.body || '' }}
+              run: |
+                  # Using env var to safely handle special characters
+                  # Use word boundaries to ensure we only match the trigger phrase
+                  if echo "$COMMENT_BODY" | grep -iE '(^|[[:space:]])@claude \(sonnet\)([[:space:]]|$)'; then
+                    echo "model=claude-sonnet-4-20250514" >> $GITHUB_OUTPUT
+                    echo "Model: Using Claude Sonnet 4"
+                  elif echo "$COMMENT_BODY" | grep -iE '(^|[[:space:]])@claude \(haiku\)([[:space:]]|$)'; then
+                    echo "model=claude-3-5-haiku-20241022" >> $GITHUB_OUTPUT
+                    echo "Model: Using Claude 3.5 Haiku"
+                  else
+                    # Default to Opus for @claude
+                    echo "model=claude-opus-4-20250514" >> $GITHUB_OUTPUT
+                    echo "Model: Using Claude Opus 4 (default)"
+                  fi
+
             - name: Run Claude Code
               id: claude
               uses: anthropics/claude-code-action@beta
               with:
                   anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
 
-                  # Optional: Specify model (defaults to Claude Sonnet 4, uncomment for Claude Opus 4)
-                  model: "claude-opus-4-20250514"
+                  # Model is dynamically selected based on trigger phrase
+                  model: ${{ steps.model.outputs.model }}
 
                   # Optional: Customize the trigger phrase (default: @claude)
                   # trigger_phrase: "/claude"
@@ -60,7 +79,7 @@ jobs:
                   custom_instructions: |
                       Follow our coding standards
                       Ensure all new code has tests
-                      
+
                       When reviewing pull requests, provide feedback on:
                       - Code quality and best practices
                       - Potential bugs or issues
@@ -68,7 +87,7 @@ jobs:
                       - Security concerns
                       - Test coverage
                       - For API endpoints: Security, input validation, and error handling
-                      
+
                       Run the test suite using ./scripts/test-all.sh and report any failures.
                       Check linting compliance with golangci-lint for backend Go code.
                       Be constructive and helpful in your feedback.

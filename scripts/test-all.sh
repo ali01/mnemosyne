@@ -1,6 +1,20 @@
 #!/bin/bash
 # Run all tests, linting, and security checks for Mnemosyne
 
+# Parse command line arguments
+VERBOSE=false
+SECURITY=false
+for arg in "$@"; do
+    case $arg in
+        -v|--verbose)
+            VERBOSE=true
+            ;;
+        -s|--security)
+            SECURITY=true
+            ;;
+    esac
+done
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -24,8 +38,35 @@ run_test() {
         return 0
     else
         echo -e "${RED}✗ FAIL${NC} - $name"
-        echo "Error output:"
-        cat /tmp/test_output
+        
+        # Extract failed test names from Go test output
+        if [[ "$name" == *"unit tests"* ]] || [[ "$name" == *"Integration tests"* ]]; then
+            echo -e "${RED}Failed tests:${NC}"
+            grep -E "^--- FAIL:|FAIL.*Test" /tmp/test_output | while read line; do
+                echo -e "  ${RED}•${NC} $line"
+            done
+        fi
+        
+        # Show lint errors summary for linting
+        if [[ "$name" == *"linting"* ]]; then
+            echo -e "${RED}Linting errors:${NC}"
+            grep -E "^[^:]+:[0-9]+:[0-9]+:" /tmp/test_output | head -10 | while read line; do
+                echo -e "  ${RED}•${NC} $line"
+            done
+            error_count=$(grep -E "^[^:]+:[0-9]+:[0-9]+:" /tmp/test_output | wc -l)
+            if [ $error_count -gt 10 ]; then
+                echo -e "  ${YELLOW}... and $((error_count - 10)) more errors${NC}"
+            fi
+        fi
+        
+        if [ "$VERBOSE" = true ]; then
+            echo ""
+            echo "Full error output:"
+            cat /tmp/test_output
+        else
+            echo ""
+            echo -e "${YELLOW}Run with -v flag for full error output${NC}"
+        fi
         RESULTS+=("FAIL: $name")
         return 1
     fi
@@ -44,11 +85,13 @@ run_test "Integration tests" "cd backend && go test -v ./internal/vault/ -run Te
 run_test "Backend linting" "cd backend && golangci-lint run --config=.golangci.yml --timeout=5m"
 
 # Security Scanning
-if command -v gosec &> /dev/null; then
-    run_test "Security scan" "cd backend && gosec -no-fail ./..."
-else
-    echo -e "${YELLOW}⚠ SKIP${NC} - Security scan (gosec not installed)"
-    RESULTS+=("SKIP: Security scan")
+if [ "$SECURITY" = true ]; then
+    if command -v gosec &> /dev/null; then
+        run_test "Security scan" "cd backend && gosec -no-fail ./..."
+    else
+        echo -e "${YELLOW}⚠ SKIP${NC} - Security scan (gosec not installed)"
+        RESULTS+=("SKIP: Security scan")
+    fi
 fi
 
 # Frontend Tests

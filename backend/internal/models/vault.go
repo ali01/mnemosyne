@@ -8,7 +8,7 @@ import "time"
 type VaultNode struct {
 	ID          string                 `json:"id" db:"id" validate:"required,min=1"`                    // Required: from frontmatter
 	Title       string                 `json:"title" db:"title" validate:"required,min=1"`                 // From frontmatter or filename fallback
-	NodeType    string                 `json:"node_type" db:"node_type" validate:"omitempty,oneof=index hub concept project question note"` // Calculated: index/hub/concept/project/question/note
+	NodeType    string                 `json:"node_type" db:"node_type" validate:"omitempty,min=1"` // Calculated node type from configuration
 	Tags        []string               `json:"tags,omitempty" db:"tags" validate:"omitempty,dive,min=1"` // From frontmatter tags field
 	Content     string                 `json:"content,omitempty" db:"content"`                               // Full markdown content
 	Metadata    map[string]interface{} `json:"metadata,omitempty" db:"metadata"`                              // All frontmatter fields

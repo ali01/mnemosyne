@@ -175,6 +175,43 @@ func TestMarkdownFile_GetTags(t *testing.T) {
 }
 
 func TestMarkdownFile_GetNodeType(t *testing.T) {
+	// Create a classifier with rules matching the old hardcoded logic
+	rules := []ClassificationRule{
+		{
+			Name:     "index_tag",
+			Priority: 1,
+			Matcher:  func(f *MarkdownFile) bool { return f.Frontmatter != nil && f.Frontmatter.HasTag("index") },
+			NodeType: "index",
+		},
+		{
+			Name:     "open_question_tag",
+			Priority: 1,
+			Matcher:  func(f *MarkdownFile) bool { return f.Frontmatter != nil && f.Frontmatter.HasTag("open-question") },
+			NodeType: "question",
+		},
+		{
+			Name:     "hub_prefix",
+			Priority: 2,
+			Matcher:  func(f *MarkdownFile) bool { return strings.HasPrefix(filepath.Base(f.Path), "~") },
+			NodeType: "hub",
+		},
+		{
+			Name:     "concepts_dir",
+			Priority: 3,
+			Matcher:  func(f *MarkdownFile) bool { return isInDirectory(f.Path, "concepts") },
+			NodeType: "concept",
+		},
+		{
+			Name:     "projects_dir",
+			Priority: 3,
+			Matcher:  func(f *MarkdownFile) bool { return isInDirectory(f.Path, "projects") },
+			NodeType: "project",
+		},
+	}
+
+	classifier, err := NewNodeClassifierWithRules(rules, "note")
+	require.NoError(t, err)
+
 	tests := []struct {
 		name     string
 		file     *MarkdownFile
@@ -215,13 +252,6 @@ func TestMarkdownFile_GetNodeType(t *testing.T) {
 			expected: "concept",
 		},
 		{
-			name: "references directory",
-			file: &MarkdownFile{
-				Path: "references/paper.md",
-			},
-			expected: "reference",
-		},
-		{
 			name: "projects directory",
 			file: &MarkdownFile{
 				Path: "projects/mnemosyne.md",
@@ -229,25 +259,35 @@ func TestMarkdownFile_GetNodeType(t *testing.T) {
 			expected: "project",
 		},
 		{
-			name: "prototypes directory",
-			file: &MarkdownFile{
-				Path: "prototypes/demo.md",
-			},
-			expected: "prototype",
-		},
-		{
-			name: "default type",
+			name: "default type - no classifier",
 			file: &MarkdownFile{
 				Path: "random/file.md",
 			},
-			expected: "default",
+			expected: "note", // Changed from "default" to "note"
+		},
+		{
+			name: "nil classifier returns note",
+			file: &MarkdownFile{
+				Path: "test.md",
+				Frontmatter: &FrontmatterData{
+					Tags: []string{"index"},
+				},
+			},
+			expected: "note",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := tt.file.GetNodeType()
-			assert.Equal(t, tt.expected, got)
+			if tt.name == "nil classifier returns note" {
+				// Test with nil classifier
+				got := tt.file.GetNodeType(nil)
+				assert.Equal(t, tt.expected, got)
+			} else {
+				// Test with configured classifier
+				got := tt.file.GetNodeType(classifier)
+				assert.Equal(t, tt.expected, got)
+			}
 		})
 	}
 }

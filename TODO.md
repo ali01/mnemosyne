@@ -252,12 +252,6 @@ Replace sample data with real vault data. Add management endpoints for vault ope
    - Support for sections and aliases
    - Syntax highlighting for code blocks
 
-## Next Immediate Actions
-
-1. Create `backend/internal/models/vault.go` with VaultNode and VaultEdge structs
-2. Write comprehensive tests for models
-3. Implement node classifier with configurable rules
-4. Build graph construction pipeline with proper error handling
 
 ## Success Metrics
 - Graph construction completes in <30s for 50K nodes
@@ -284,3 +278,16 @@ Replace sample data with real vault data. Add management endpoints for vault ope
 - Better scalability to 50K+ nodes
 
 **Implementation**: Defer until after Phase 4 when we have real-world performance metrics.
+
+### Caching
+- Consider caching classification results for large vaults
+
+## Code Quality Improvements
+### Minor Issues
+  2. Test Independence: Some tests might benefit from setup/teardown helpers
+  3. Benchmarks: Could add more realistic benchmarks with actual file operations
+
+## Scratch
+
+- add validation and database constraints to node.go like the ones in vault.go
+- tool to strip trailing whitespace

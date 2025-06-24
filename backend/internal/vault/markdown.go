@@ -152,40 +152,13 @@ func (m *MarkdownFile) GetTags() []string {
 	return []string{}
 }
 
-// GetNodeType determines the node type based on tags and file path
-func (m *MarkdownFile) GetNodeType() string {
-	// Check frontmatter tags first
-	if m.Frontmatter != nil {
-		if m.Frontmatter.HasTag("index") {
-			return "index"
-		}
-		if m.Frontmatter.HasTag("open-question") {
-			return "question"
-		}
+// GetNodeType determines the node type using the provided NodeClassifier
+// If classifier is nil, returns "note" as the default type
+func (m *MarkdownFile) GetNodeType(classifier *NodeClassifier) string {
+	if classifier == nil {
+		return "note"
 	}
-
-	// Check filename prefix
-	base := filepath.Base(m.Path)
-	if strings.HasPrefix(base, "~") {
-		return "hub"
-	}
-
-	// Check directory structure
-	parts := strings.Split(m.Path, string(filepath.Separator))
-	if len(parts) > 0 {
-		switch parts[0] {
-		case "concepts":
-			return "concept"
-		case "references":
-			return "reference"
-		case "projects":
-			return "project"
-		case "prototypes":
-			return "prototype"
-		}
-	}
-
-	return "default"
+	return classifier.ClassifyNode(m)
 }
 
 // GetCreatedAt returns the file creation time

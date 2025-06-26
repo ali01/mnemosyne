@@ -5,7 +5,10 @@
       "Bash(go test:*)",
       "Bash(golangci-lint run:*)",
       "Bash(git add:*)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Bash(go get:*)",
+      "Bash(go tool cover:*)",
+      "Bash(go vet:*)"
     ],
     "deny": []
   }

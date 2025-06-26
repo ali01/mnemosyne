@@ -9,7 +9,9 @@
       "Bash(go get:*)",
       "Bash(go tool cover:*)",
       "Bash(go vet:*)",
-      "Bash(rg:*)"
+      "Bash(rg:*)",
+      "Bash(find:*)",
+      "Bash(gofmt:*)"
     ],
     "deny": []
   }

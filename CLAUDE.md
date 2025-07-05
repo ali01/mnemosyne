@@ -6,6 +6,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Mnemosyne** - A web-based graph visualizer for Obsidian vault concepts, designed to handle large knowledge graphs with up to 50,000 nodes.
 
+## Working Directory
+
+- **Project root**: `/Users/alive/home/mnemosyne`
+- **Backend code**: `/Users/alive/home/mnemosyne/backend`
+- **Frontend code**: `/Users/alive/home/mnemosyne/frontend`
+- **Important**: Always verify current directory with `pwd` before running commands
+- **Preferred approach**: Use absolute paths or chain commands with `&&` to maintain directory context
+
 ## Architecture
 
 ### Backend (Go + Gin)

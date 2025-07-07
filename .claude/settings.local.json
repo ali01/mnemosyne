@@ -8,7 +8,8 @@
       "Bash(grep:*)",
       "Bash(go get:*)",
       "Bash(go tool cover:*)",
-      "Bash(go vet:*)"
+      "Bash(go vet:*)",
+      "Bash(rg:*)"
     ],
     "deny": []
   }

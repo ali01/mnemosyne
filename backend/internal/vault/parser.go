@@ -44,15 +44,15 @@ type UnresolvedLink struct {
 
 // ParseStats contains statistics about the parsing process
 type ParseStats struct {
-	TotalFiles      int           // Total markdown files found
-	ParsedFiles     int           // Successfully parsed files
-	FailedFiles     int           // Files that failed to parse
-	TotalLinks      int           // Total WikiLinks found
-	ResolvedLinks   int           // WikiLinks successfully resolved
-	UnresolvedLinks int           // WikiLinks that couldn't be resolved
-	StartTime       time.Time     // When parsing started
-	EndTime         time.Time     // When parsing completed
-	Duration        time.Duration // Total parsing duration
+	TotalFiles      int       // Total markdown files found
+	ParsedFiles     int       // Successfully parsed files
+	FailedFiles     int       // Files that failed to parse
+	TotalLinks      int       // Total WikiLinks found
+	ResolvedLinks   int       // WikiLinks successfully resolved
+	UnresolvedLinks int       // WikiLinks that couldn't be resolved
+	StartTime       time.Time // When parsing started
+	EndTime         time.Time // When parsing completed
+	DurationMS      int64     // Total parsing duration in milliseconds
 }
 
 // NewParser creates a new vault parser with the specified configuration
@@ -108,9 +108,10 @@ func (p *Parser) ParseVault() (*ParseResult, error) {
 
 	// Step 4: Calculate final statistics
 	result.Stats.EndTime = time.Now()
-	result.Stats.Duration = result.Stats.EndTime.Sub(result.Stats.StartTime)
+	duration := result.Stats.EndTime.Sub(result.Stats.StartTime)
+	result.Stats.DurationMS = duration.Milliseconds()
 
-	log.Printf("Parsing completed in %v", result.Stats.Duration)
+	log.Printf("Parsing completed in %v", duration)
 	log.Printf("Parsed: %d/%d files, Resolved: %d/%d links",
 		result.Stats.ParsedFiles, result.Stats.TotalFiles,
 		result.Stats.ResolvedLinks, result.Stats.TotalLinks)

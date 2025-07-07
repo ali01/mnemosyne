@@ -11,7 +11,7 @@
 
 ## Implementation Status
 
-⚠️ **IMPORTANT**: While core components are complete, they are NOT yet integrated. The API currently serves sample data from `backend/data/sample_graph.json`.
+⚠️ **IMPORTANT**: While core components are complete, they are NOT yet integrated. The API serves data from the database via service layer, but the parsing pipeline (Git → Parser → Database) is not connected.
 
 For current implementation status and roadmap, see `ROADMAP.md`.
 
@@ -69,7 +69,7 @@ cp config.example.yaml config.yaml
 # Database setup (schema auto-initializes)
 createdb mnemosyne
 
-# Run server (currently serves sample data from backend/data/sample_graph.json)
+# Run server (serves data from database via service layer)
 go run cmd/server/main.go
 # API available at http://localhost:8080/api/v1/graph
 
@@ -114,7 +114,7 @@ go test -v ./internal/vault/...
 ### Testing Git Integration (Works Today)
 ```bash
 cd backend
-go run cmd/test-git/main.go config.yaml
+go run cmd/sync-vault/main.go config.yaml
 # Expected: Successfully clones your configured vault
 ```
 
@@ -122,8 +122,8 @@ go run cmd/test-git/main.go config.yaml
 ```bash
 cd backend
 go run cmd/server/main.go
-# API serves sample data at http://localhost:8080/api/v1/graph
-# Note: Returns data from backend/data/sample_graph.json, not your vault
+# API serves data from database at http://localhost:8080/api/v1/graph
+# Note: Database must be populated manually; parsing pipeline not connected
 ```
 
 ### Viewing the Sample Graph (Works Today)
@@ -227,19 +227,26 @@ Multiple indexes on foreign keys, node types, tags, and full-text search
 - **Graph Builder**: Comprehensive tests ✓
   - Tests for duplicate handling, orphan nodes, metrics
   - Mock data for predictable testing
+- **Repository Layer**: 95%+ coverage ✓
+  - Full CRUD operations with transaction support
+  - Mock implementations for testing
+  - Performance optimizations with PostgreSQL
+- **Service Layer**: Individual services tested ✓
+  - NodeService, EdgeService, PositionService, MetadataService
+  - Dependency injection and repository pattern
 - **Models**: Full validation tests ✓
   - VaultNode and VaultEdge validation
   - JSON serialization/deserialization
 
 ### Missing Tests
-- **Integration Tests**: No integration to test yet
-  - `test-integration.sh` exists but has no actual tests
-  - Waiting for service/repository implementation
-- **API Tests**: Currently using sample data
-  - Need tests with real database queries
-  - Mock repositories not yet implemented
-- **End-to-End Tests**: Blocked by integration gap
-  - Cannot test full flow: Git → Parser → Database → API
+- **Integration Tests**: No end-to-end integration to test yet
+  - `test-integration.sh` exists but awaits VaultService implementation
+  - Repository and service layers are individually tested
+- **API Tests**: Tests with real database queries
+  - Repository layer has comprehensive test coverage
+  - Mock repositories are implemented and tested
+- **End-to-End Tests**: Blocked by VaultService gap
+  - Cannot test full flow: Git → Parser → VaultService → Database → API
 
 ### Running Tests
 ```bash
@@ -271,11 +278,18 @@ golangci-lint run --config=.golangci.yml
 
 Based on comprehensive benchmarks (see `BENCHMARKS.md` for full results):
 
+### Performance Targets
+- Parse 1,000 files: <5 seconds
+- Parse 10,000 files: <30 seconds
+- Database Queries: <100ms
+- Graph API response: <100ms for 10K nodes
+- Search response: <50ms with indexes
+- Memory usage: <1GB for 50K nodes
+
 ### Target Scale: 50,000 Nodes
 - **Parsing time**: ~457ms for typical documents (9.15 μs × 50,000)
 - **Memory usage**: ~1GB for full vault in memory (19.1 KB × 50,000)
 - **Link resolution**: O(1) constant time regardless of vault size
-- **Database queries**: Should be <100ms with proper indexes
 
 ### Current Performance Characteristics
 - **WikiLink extraction**: ~874ns for simple patterns
@@ -284,9 +298,9 @@ Based on comprehensive benchmarks (see `BENCHMARKS.md` for full results):
 - **Concurrent processing**: Linear speedup to CPU core count
 
 ### Known Limitations
-- **API loads entire graph**: No pagination or viewport filtering yet
 - **Content field**: Should implement lazy loading for files >100KB
 - **Memory scaling**: Linear with content size (consider streaming for huge vaults)
+- **Advanced caching**: Redis integration and background metrics not yet implemented
 
 ### Performance Monitoring
 ```bash
@@ -358,3 +372,65 @@ node_classification:
       pattern: "research"
       node_type: "research"
 ```
+
+## Risk Mitigation
+
+### Technical Risks
+
+1. **Large Vault Performance (50K+ nodes)**
+   - **Risk**: Initial graph load times out or uses too much memory
+   - **Mitigation**:
+     - Implement pagination from the start
+     - Add `limit` and `offset` to graph endpoint
+     - Stream large responses instead of loading all in memory
+     - Monitor memory usage during development
+
+2. **Git Operation Failures**
+   - **Risk**: Network issues, large repositories, authentication problems
+   - **Mitigation**:
+     - Add configurable timeouts (default 5 minutes)
+     - Implement shallow cloning for large repos
+     - Cache successful clones and provide offline mode
+     - Clear error messages for auth failures
+
+3. **Database Connection Issues**
+   - **Risk**: Connection pool exhaustion, network interruptions
+   - **Mitigation**:
+     - Configure connection pool limits
+     - Implement health checks
+     - Add circuit breaker for database operations
+     - Cache recent data for read-only operations
+
+4. **Concurrent Parse Operations**
+   - **Risk**: Multiple parse requests causing conflicts
+   - **Mitigation**:
+     - Implement parse queue with single worker
+     - Add status checks before starting new parse
+     - Use database locks for critical sections
+     - Return 409 Conflict for concurrent requests
+
+### Operational Risks
+
+1. **Data Loss During Re-indexing**
+   - **Risk**: Losing user-saved node positions
+   - **Mitigation**:
+     - Never truncate node_positions table
+     - Use upsert operations for nodes/edges
+     - Backup positions before major operations
+     - Add audit log for all mutations
+
+2. **API Breaking Changes**
+   - **Risk**: Frontend breaks when API changes
+   - **Mitigation**:
+     - Version API from start (`/api/v1/`)
+     - Document all endpoints with OpenAPI
+     - Deprecate endpoints before removal
+     - Test frontend/backend together in CI
+
+3. **Security Vulnerabilities**
+   - **Risk**: Exposed credentials, injection attacks
+   - **Mitigation**:
+     - Never log sensitive configuration
+     - Use prepared statements for all queries
+     - Validate and sanitize all inputs
+     - Regular dependency updates

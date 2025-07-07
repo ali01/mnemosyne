@@ -130,7 +130,7 @@ func TestVaultNode_JSONMarshaling(t *testing.T) {
 						expected[k] = v
 					}
 				}
-				assert.Equal(t, expected, decoded.Metadata)
+				assert.Equal(t, JSONMetadata(expected), decoded.Metadata)
 			} else if len(tt.node.Metadata) == 0 {
 				// Empty map marshals to {} but unmarshals to nil
 				assert.Nil(t, decoded.Metadata)

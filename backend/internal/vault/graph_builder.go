@@ -109,9 +109,9 @@ type GraphStats struct {
 	// These represent isolated files that aren't part of the main knowledge graph.
 	OrphanedNodes int
 
-	// BuildDuration measures the total time taken to construct the graph.
+	// BuildDurationMS measures the total time taken to construct the graph in milliseconds.
 	// Useful for performance monitoring and optimization of large vaults.
-	BuildDuration time.Duration
+	BuildDurationMS int64
 }
 
 // edgeKey represents a unique edge for deduplication
@@ -188,10 +188,11 @@ func (gb *GraphBuilder) BuildGraph(parseResult *ParseResult) (*Graph, error) {
 	// Calculate final statistics and prepare result
 	result := gb.finalizeResult(nodeMap, edges, parseResult.UnresolvedLinks, duplicatesMap, stats)
 
-	stats.BuildDuration = time.Since(startTime)
+	duration := time.Since(startTime)
+	stats.BuildDurationMS = duration.Milliseconds()
 	result.Stats = *stats
 
-	log.Printf("Graph building completed in %v", stats.BuildDuration)
+	log.Printf("Graph building completed in %v", duration)
 	log.Printf("Created: %d nodes, %d edges | Skipped: %d files | Orphaned: %d nodes",
 		stats.NodesCreated, stats.EdgesCreated, stats.FilesSkipped, stats.OrphanedNodes)
 

@@ -3,38 +3,107 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
+	"runtime/debug"
 	"syscall"
 	"time"
 
 	"github.com/ali01/mnemosyne/internal/api"
+	"github.com/ali01/mnemosyne/internal/config"
+	"github.com/ali01/mnemosyne/internal/db"
+	"github.com/ali01/mnemosyne/internal/service"
 	"github.com/gin-gonic/gin"
+	"github.com/jmoiron/sqlx"
 )
 
 func main() {
-	router := gin.Default()
-	api.SetupRoutes(router)
+	// Set up panic recovery
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("Server panic recovered: %v", r)
+			log.Printf("Stack trace:\n%s", debug.Stack())
+			os.Exit(1)
+		}
+	}()
 
+	// Load configuration
+	configPath := "config.yaml"
+	if len(os.Args) > 1 {
+		configPath = os.Args[1]
+	}
+
+	cfg, err := config.LoadFromYAML(configPath)
+	if err != nil {
+		log.Fatalf("Failed to load configuration: %v", err)
+	}
+
+	// Initialize database connection
+	dbConfig := db.Config{
+		Host:     cfg.Database.Host,
+		Port:     cfg.Database.Port,
+		User:     cfg.Database.User,
+		Password: cfg.Database.Password,
+		DBName:   cfg.Database.DBName,
+		SSLMode:  cfg.Database.SSLMode,
+	}
+
+	database, err := db.Connect(dbConfig)
+	if err != nil {
+		log.Fatalf("Failed to connect to database: %v", err)
+	}
+	defer database.Close()
+
+	// Initialize database schema
+	if err := initializeDatabase(database); err != nil {
+		log.Fatalf("Failed to initialize database: %v", err)
+	}
+
+	// Create services
+	nodeService := service.NewNodeService(database)
+	edgeService := service.NewEdgeService(database)
+	positionService := service.NewPositionService(database)
+
+	// Initialize router with services
+	router := gin.Default()
+	api.SetupRoutesWithServices(router, nodeService, edgeService, positionService, cfg)
+
+	// Start server
+	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
 	srv := &http.Server{
-		Addr:              ":8080",
+		Addr:              addr,
 		Handler:           router,
 		ReadHeaderTimeout: 30 * time.Second,
 	}
 
+	// Set up shutdown signal channel
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("HTTP server panic recovered: %v", r)
+				log.Printf("Stack trace:\n%s", debug.Stack())
+				// Signal main goroutine to shut down
+				quit <- syscall.SIGTERM
+			}
+		}()
+
+		log.Printf("Starting server on %s", addr)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("listen: %s\n", err)
 		}
 	}()
 
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	// Wait for interrupt signal
 	<-quit
 	log.Println("Shutting down server...")
 
+	// Graceful shutdown
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(ctx); err != nil {
@@ -43,4 +112,21 @@ func main() {
 	}
 
 	log.Println("Server exiting")
+}
+
+// initializeDatabase creates the database schema
+func initializeDatabase(database *sqlx.DB) error {
+	// Read and execute schema
+	schemaPath := "internal/db/schema.sql"
+	schemaSQL, err := os.ReadFile(schemaPath)
+	if err != nil {
+		return fmt.Errorf("failed to read schema: %w", err)
+	}
+
+	if err := db.ExecuteSchema(database, string(schemaSQL)); err != nil {
+		return fmt.Errorf("failed to execute schema: %w", err)
+	}
+
+	log.Println("Database schema initialized successfully")
+	return nil
 }

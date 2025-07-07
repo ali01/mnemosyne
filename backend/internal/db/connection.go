@@ -1,7 +1,8 @@
-// Package db provides database connection and transaction management for PostgreSQL
+// Package db provides database setup and transaction helpers for PostgreSQL
 package db
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"time"
@@ -20,13 +21,8 @@ type Config struct {
 	SSLMode  string
 }
 
-// DB wraps sqlx.DB with custom methods
-type DB struct {
-	*sqlx.DB
-}
-
-// NewDB creates a new database connection with connection pooling
-func NewDB(cfg Config) (*DB, error) {
+// Connect creates a new database connection with connection pooling
+func Connect(cfg Config) (*sqlx.DB, error) {
 	// Build PostgreSQL DSN
 	dsn := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
 		cfg.Host, cfg.Port, cfg.User, cfg.Password, cfg.DBName, cfg.SSLMode)
@@ -47,18 +43,22 @@ func NewDB(cfg Config) (*DB, error) {
 	}
 
 	log.Printf("Connected to PostgreSQL database: %s@%s:%d/%s", cfg.User, cfg.Host, cfg.Port, cfg.DBName)
-	return &DB{db}, nil
+	return db, nil
 }
 
-// Close closes the database connection
-func (db *DB) Close() error {
-	return db.DB.Close()
+// ExecuteSchema runs the schema SQL file
+func ExecuteSchema(db *sqlx.DB, schemaSQL string) error {
+	_, err := db.Exec(schemaSQL)
+	if err != nil {
+		return fmt.Errorf("failed to execute schema: %w", err)
+	}
+	return nil
 }
 
-// Transaction executes a function within a database transaction
+// WithTransaction executes a function within a database transaction with context support
 // Automatically handles commit/rollback and panics
-func (db *DB) Transaction(fn func(*sqlx.Tx) error) error {
-	tx, err := db.Beginx()
+func WithTransaction(db *sqlx.DB, ctx context.Context, fn func(*sqlx.Tx) error) error {
+	tx, err := db.BeginTxx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
@@ -86,27 +86,4 @@ func (db *DB) Transaction(fn func(*sqlx.Tx) error) error {
 	}
 
 	return nil
-}
-
-// ExecuteSchema runs the schema SQL file
-func (db *DB) ExecuteSchema(schemaSQL string) error {
-	_, err := db.Exec(schemaSQL)
-	if err != nil {
-		return fmt.Errorf("failed to execute schema: %w", err)
-	}
-	return nil
-}
-
-// GetNodeCount returns the total number of nodes in the database
-func (db *DB) GetNodeCount() (int, error) {
-	var count int
-	err := db.Get(&count, "SELECT COUNT(*) FROM nodes")
-	return count, err
-}
-
-// GetEdgeCount returns the total number of edges in the database
-func (db *DB) GetEdgeCount() (int, error) {
-	var count int
-	err := db.Get(&count, "SELECT COUNT(*) FROM edges")
-	return count, err
 }

@@ -21,8 +21,9 @@ type Config struct {
 
 // ServerConfig holds HTTP server configuration
 type ServerConfig struct {
-	Host string `yaml:"host"`
-	Port int    `yaml:"port"`
+	Host           string        `yaml:"host"`
+	Port           int           `yaml:"port"`
+	RequestTimeout time.Duration `yaml:"request_timeout"` // Timeout for API requests
 }
 
 // DatabaseConfig holds database connection configuration
@@ -96,8 +97,9 @@ type ClassificationRuleConfig struct {
 func DefaultConfig() *Config {
 	return &Config{
 		Server: ServerConfig{
-			Host: "localhost",
-			Port: 8080,
+			Host:           "localhost",
+			Port:           8080,
+			RequestTimeout: 30 * time.Second,
 		},
 		Database: DatabaseConfig{
 			Host:     "localhost",

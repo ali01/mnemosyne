@@ -4,6 +4,7 @@
 server:
     host: localhost
     port: 8080
+    request_timeout: 30s  # Timeout for API requests
 
 # Database configuration
 database:

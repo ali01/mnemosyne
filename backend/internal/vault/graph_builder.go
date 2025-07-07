@@ -346,13 +346,7 @@ func (gb *GraphBuilder) buildEdges(
 
 // createNode creates a VaultNode from a MarkdownFile
 func (gb *GraphBuilder) createNode(file *MarkdownFile, id string) (*models.VaultNode, error) {
-	// Extract title (prefer frontmatter title, fallback to filename)
 	title := file.Title
-	if file.Frontmatter != nil {
-		if fmTitle, ok := file.Frontmatter.GetString("title"); ok && fmTitle != "" {
-			title = fmTitle
-		}
-	}
 
 	// Determine node type using classifier
 	nodeType := ""

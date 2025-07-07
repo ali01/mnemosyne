@@ -518,7 +518,7 @@ func TestCreateNode_WithMetadata(t *testing.T) {
 
 	file := &MarkdownFile{
 		Path:        "test.md",
-		Title:       "Filename Title",
+		Title:       "Custom Title", // Title already includes frontmatter override from markdown.go
 		Content:     "Test content",
 		Frontmatter: frontmatter,
 		FileInfo:    &testFileInfo{modTime: time.Now()},
@@ -528,7 +528,7 @@ func TestCreateNode_WithMetadata(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, "test", node.ID)
-	assert.Equal(t, "Custom Title", node.Title) // Prefers frontmatter title
+	assert.Equal(t, "Custom Title", node.Title) // Uses title from MarkdownFile
 	assert.Equal(t, []string{"tag1", "tag2"}, node.Tags)
 	assert.Equal(t, "Test content", node.Content)
 	assert.Equal(t, "test.md", node.FilePath)

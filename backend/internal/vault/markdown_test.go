@@ -32,7 +32,7 @@ This contains a [[Link]] to another note.`,
 			path: "test/document.md",
 			wantFile: &MarkdownFile{
 				Path:  "test/document.md",
-				Title: "Document",
+				Title: "document",
 				Content: `---
 id: "test123"
 tags: ["index", "concept"]
@@ -64,7 +64,7 @@ Just content, no frontmatter.`,
 			path: "simple.md",
 			wantFile: &MarkdownFile{
 				Path:        "simple.md",
-				Title:       "Simple",
+				Title:       "simple",
 				Content:     "# Simple Note\n\nJust content, no frontmatter.",
 				Frontmatter: nil,
 				Links:       []WikiLink{},
@@ -123,20 +123,20 @@ func TestExtractTitle(t *testing.T) {
 		path     string
 		expected string
 	}{
-		{"simple.md", "Simple"},
-		{"my-document.md", "My Document"},
-		{"my_document.md", "My Document"},
-		{"~hub-node.md", "Hub Node"},
-		{"path/to/document.md", "Document"},
-		{"UPPERCASE.md", "Uppercase"},
-		{"multiple---dashes.md", "Multiple   Dashes"},
+		{"simple.md", "simple"},
+		{"my-document.md", "my-document"},
+		{"my_document.md", "my_document"},
+		{"~hub-node.md", "~hub-node"},
+		{"path/to/document.md", "document"},
+		{"UPPERCASE.md", "UPPERCASE"},
+		{"multiple---dashes.md", "multiple---dashes"},
 		{"", ""},
-		{"no-extension", "No Extension"},
+		{"no-extension", "no-extension"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.path, func(t *testing.T) {
-			got := extractTitle(tt.path)
+			got := extractTitle(tt.path, nil)
 			assert.Equal(t, tt.expected, got)
 		})
 	}
@@ -337,25 +337,72 @@ func TestExtractTitle_EdgeCases(t *testing.T) {
 	}{
 		// Special prefixes
 		{"++priority.md", "++priority"},
-		{"--archived.md", "  Archived"},
-		{"~!special.md", "!special"},
+		{"--archived.md", "--archived"},
+		{"~!special.md", "~!special"},
 
 		// Unicode and special characters
-		{"café-société.md", "Café Société"},
-		{"2023-01-15_meeting.md", "2023 01 15 Meeting"},
-		{"file.multiple.dots.md", "File.multiple.dots"},
+		{"café-société.md", "café-société"},
+		{"2023-01-15_meeting.md", "2023-01-15_meeting"},
+		{"file.multiple.dots.md", "file.multiple.dots"},
 
 		// Very long filename
-		{strings.Repeat("very-long-", 20) + "name.md", strings.Repeat("Very Long ", 20) + "Name"},
+		{strings.Repeat("very-long-", 20) + "name.md", strings.Repeat("very-long-", 20) + "name"},
 
 		// Path separators
-		{"some/path/to/file.md", "File"},
+		{"some/path/to/file.md", "file"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
-			got := extractTitle(tt.input)
+			got := extractTitle(tt.input, nil)
 			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestExtractTitle_WithFrontmatter(t *testing.T) {
+	tests := []struct {
+		name        string
+		path        string
+		frontmatter *FrontmatterData
+		expected    string
+	}{
+		{
+			name: "frontmatter title overrides filename",
+			path: "my-file.md",
+			frontmatter: &FrontmatterData{
+				Raw: map[string]any{"title": "Custom Title"},
+			},
+			expected: "Custom Title",
+		},
+		{
+			name: "empty frontmatter title falls back to filename",
+			path: "my-file.md",
+			frontmatter: &FrontmatterData{
+				Raw: map[string]any{"title": ""},
+			},
+			expected: "my-file",
+		},
+		{
+			name: "no frontmatter uses filename",
+			path: "my-file.md",
+			frontmatter: nil,
+			expected: "my-file",
+		},
+		{
+			name: "frontmatter without title field uses filename",
+			path: "another-file.md",
+			frontmatter: &FrontmatterData{
+				Raw: map[string]any{"other": "value"},
+			},
+			expected: "another-file",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := extractTitle(tt.path, tt.frontmatter)
+			assert.Equal(t, tt.expected, got)
 		})
 	}
 }
@@ -467,7 +514,7 @@ func TestMarkdownFile_BinaryContent(t *testing.T) {
 	file, err := ProcessMarkdownFile(tempDir, "binary.md")
 	assert.NoError(t, err) // Should not error
 	assert.NotNil(t, file)
-	assert.Equal(t, "Binary", file.Title)
+	assert.Equal(t, "binary", file.Title)
 }
 
 func TestMarkdownFile_LargeContent(t *testing.T) {

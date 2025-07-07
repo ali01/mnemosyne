@@ -12,7 +12,8 @@
       "Bash(rg:*)",
       "Bash(find:*)",
       "Bash(gofmt:*)",
-      "Bash(./scripts/test-integration.sh:*)"
+      "Bash(./scripts/test-integration.sh:*)",
+      "Bash(sed:*)"
     ],
     "deny": []
   }

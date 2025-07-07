@@ -1,256 +1,361 @@
-# TODO: Mnemosyne Development Plan
+# Mnemosyne Development Roadmap
 
 ## Current Status
 - ✅ Phase 1: Git Integration - COMPLETED
 - ✅ Phase 2: Vault Parser - COMPLETED (94%+ test coverage)
-- 🚧 Phase 3: Graph Construction - IN PROGRESS
+- ✅ Phase 3: Graph Construction - COMPLETED (core components built)
+- 🚧 Phase 3.5: Integration Layer - IN PROGRESS (current priority)
 - ⏳ Phase 4: API Integration
 - ⏳ Phase 5: Caching & Performance
 - ⏳ Phase 6: File Watching & Live Updates
+- ⏳ Phase 7: Production Readiness
 
-## Phase 3: Graph Construction
+## Immediate Next Steps
+
+### Week 1: Complete Integration Layer (Phase 3.5)
+1. **Day 1-2**: Create Repository Layer
+   - [ ] Create `backend/internal/repository/` directory
+   - [ ] Implement `node_repository.go` with basic CRUD operations
+   - [ ] Implement `edge_repository.go` with graph queries
+   - [ ] Write unit tests with mock database
+
+2. **Day 3-4**: Create Service Layer
+   - [ ] Create `backend/internal/service/` directory
+   - [ ] Implement `vault_service.go` with parse orchestration
+   - [ ] Add transaction support for atomic updates
+   - [ ] Write integration tests with test database
+
+3. **Day 5**: Wire Everything Together
+   - [ ] Update `main.go` to initialize database and load config
+   - [ ] Inject dependencies into API handlers
+   - [ ] Replace `sample_graph.json` with real queries
+   - [ ] Test end-to-end flow
+
+### Week 2: Complete Basic API (Phase 4)
+1. **Parse Management Endpoints**:
+   - [ ] `POST /api/v1/vault/parse` - Trigger parsing
+   - [ ] `GET /api/v1/vault/status` - Check progress
+
+2. **Data Access Endpoints**:
+   - [ ] `GET /api/v1/nodes/:id` - Get node with content
+   - [ ] `GET /api/v1/search` - Search nodes by title/content
+   - [ ] `PUT /api/v1/nodes/:id/position` - Persist positions
+
+3. **Frontend Integration**:
+   - [ ] Update frontend to use new endpoints
+   - [ ] Add loading states during parsing
+   - [ ] Test with real vault data
+
+
+## Current Architecture & Data Flow
+
+### Current Flow (Broken)
+```
+GitHub Vault → Git Clone ✓ → Parser ✓ → Graph Builder ✓ → ❌ (stops here)
+Frontend ← API ← sample_graph.json (placeholder data)
+```
+
+### Target Flow
+```
+GitHub Vault → Git Clone → Parser → Graph Builder → Database → API → Frontend
+                    ↑                                     ↓
+                    └──────── Background Sync ←───────────┘
+```
+
+**Components Status**:
+- ✓ = Implemented and tested
+- ❌ = Missing integration
+- The gap is between Graph Builder output and Database input
+
+## MVP vs Future Features
+
+### MVP (Minimum Viable Product) - Target: Functional System
+**Goal**: Get a working system that can parse a vault, build a graph, and serve it via API
+
+**Phases 1-4** (Must Have):
+- ✅ **Phase 1**: Git Integration - Clone and sync vaults from GitHub
+- ✅ **Phase 2**: Vault Parser - Extract nodes and links from markdown files
+- ✅ **Phase 3**: Graph Construction - Build graph structure from parsed data
+- 🚧 **Phase 3.5**: Integration Layer - Connect components to database and API
+- ⏳ **Phase 4**: Basic API - Serve real vault data, search, node content
+
+**MVP Success Criteria**:
+- Can clone a GitHub-hosted Obsidian vault
+- Can parse markdown files and extract graph structure
+- Can store and retrieve graph data from PostgreSQL
+- API serves actual vault data (not sample data)
+- Frontend displays the graph with basic interactions
+- Node positions can be saved and restored
+
+### Post-MVP Features (Nice to Have)
+**Goal**: Enhance performance, user experience, and capabilities
+
+**Phases 5-7** (Future Enhancements):
+- **Phase 5**: Caching & Performance
+  - Redis caching for parsed graphs
+  - Lazy loading for large vaults
+  - Pagination and viewport filtering
+  - Advanced metrics (PageRank, clustering)
+  - Backend graph layout algorithms (force-directed, hierarchical, 3D)
+
+- **Phase 6**: File Watching & Live Updates
+  - WebSocket support for real-time updates
+  - Incremental parsing for changed files
+  - Git webhook integration
+
+- **Phase 7**: Production Readiness
+  - Docker containerization
+  - Kubernetes deployment
+  - Monitoring and alerting
+  - Multi-vault support
+  - Authentication and authorization
+
+## Completed Phases Summary
+
+### Phase 1: Git Integration ✅
+- Git clone and sync from GitHub repositories
+- SSH and HTTPS support with authentication
+- Shallow cloning for performance
+- Test utility: `cmd/test-git/main.go`
+
+### Phase 2: Vault Parser ✅
+- Extract nodes, links, and frontmatter from markdown files
+- Support for WikiLinks: `[[Note]]`, `[[Note|Alias]]`, `[[Note#Section]]`
+- Concurrent file processing with worker pools
+- 94%+ test coverage with comprehensive edge cases
+
+### Phase 3: Graph Construction ✅
+- VaultNode & VaultEdge models for graph representation
+- Configurable node classification system
+- Two-pass graph building algorithm
+- Handles duplicates, missing IDs, and unresolved links
+
+## Phase 3.5: Integration Layer (CURRENT PRIORITY)
 
 ### Overview
-Transform parsed markdown files into a graph structure suitable for visualization. Connect vault parser output to database storage and API endpoints.
+Connect the completed components (parser, graph builder, node classifier) to the database and API. This is the critical missing piece that bridges the gap between the functional components and the working system.
 
-### Step 1: Create VaultNode Model
-**File**: `backend/internal/models/vault.go`
+### Step 1: Create Repository Layer
+**Directory**: `backend/internal/repository/`
 
-**Data Structure**:
+**NodeRepository** (`node_repository.go`):
 ```go
-type VaultNode struct {
-    ID          string                 // Required: from frontmatter
-    Title       string                 // From frontmatter or filename fallback
-    NodeType    string                 // Calculated: index/hub/concept/project/question/note
-    Tags        []string               // From frontmatter tags field
-    Content     string                 // Full markdown content
-    Metadata    map[string]interface{} // All frontmatter fields
-    FilePath    string                 // Original file location
-    InDegree    int                    // Number of incoming links
-    OutDegree   int                    // Number of outgoing links
-    Centrality  float64                // PageRank or similar metric
-    CreatedAt   time.Time
-    UpdatedAt   time.Time
+type NodeRepository interface {
+    CreateBatch(ctx context.Context, nodes []models.VaultNode) error
+    UpsertBatch(ctx context.Context, nodes []models.VaultNode) error
+    GetByIDs(ctx context.Context, ids []string) ([]models.VaultNode, error)
+    GetAll(ctx context.Context) ([]models.VaultNode, error)
+    Search(ctx context.Context, query string) ([]models.VaultNode, error)
+    GetByType(ctx context.Context, nodeType string) ([]models.VaultNode, error)
+    UpdatePositions(ctx context.Context, positions []models.Position) error
 }
 ```
 
-**Purpose**: Bridge between file-centric parser output and node-centric graph visualization. Each node represents a concept/note in the knowledge graph with all necessary metadata for rendering and analysis.
-
-### Step 2: Create VaultEdge Model
-**File**: `backend/internal/models/vault.go`
-
-**Data Structure**:
+**EdgeRepository** (`edge_repository.go`):
 ```go
-type VaultEdge struct {
-    ID          string    // Auto-generated UUID
-    SourceID    string    // Node ID of link source
-    TargetID    string    // Node ID of link target
-    EdgeType    string    // "wikilink" or "embed"
-    DisplayText string    // Link alias or section reference
-    Weight      float64   // Default 1.0, for future use
-    CreatedAt   time.Time
+type EdgeRepository interface {
+    CreateBatch(ctx context.Context, edges []models.VaultEdge) error
+    GetByNode(ctx context.Context, nodeID string) ([]models.VaultEdge, error)
+    GetSubgraph(ctx context.Context, nodeIDs []string) ([]models.VaultEdge, error)
+    GetAll(ctx context.Context) ([]models.VaultEdge, error)
 }
 ```
 
-**Purpose**: Represent connections between ideas. Supports different link types and preserves context through display text. Enables both directed and bidirectional graph operations. All edges in the VaultEdge table are stored as directed (source→target). Bidirectional relationships are represented by creating two edges (A→B and B→A) when needed. This approach:
-- Maintains simplicity in the data model
-- Allows efficient queries for both incoming and outgoing links
-- Supports future weighted edges where A→B might have different weight than B→A
-- The EdgeRepository provides methods like `GetBidirectional()` to query relationships regardless of direction
-
-### Step 3: Implement Node Type Calculator
-**File**: `backend/internal/vault/node_classifier.go`
-
-**Classification Rules** (priority order):
-1. Explicit tags: `index` → "index", `open-question` → "question"
-2. Filename prefix: `~` → "hub"
-3. Directory path: `concepts/` → "concept", `projects/` → "project", etc.
-4. Default: "note"
-
-**Purpose**: Provide visual hierarchy through node types. Different types get different colors/sizes in visualization. Rules are configurable and extensible.
-
-### Step 4: Create Graph Builder
-**File**: `backend/internal/vault/graph_builder.go`
-
-**Data Structures**:
+**VaultRepository** (`vault_repository.go`):
 ```go
-type GraphBuildResult struct {
-    Nodes          []VaultNode
-    Edges          []VaultEdge
-    UnresolvedLinks []UnresolvedLink
-    Stats          GraphBuildStats
-}
-
-type GraphBuildStats struct {
-    NodesCreated    int
-    EdgesCreated    int
-    FilesSkipped    int           // Missing ID
-    DuplicateIDs    []string
-    UnresolvedLinks int
-    BuildDuration   time.Duration
+type VaultRepository interface {
+    SaveParseResult(ctx context.Context, result *vault.GraphBuildResult) error
+    GetParseHistory(ctx context.Context, limit int) ([]models.ParseHistory, error)
+    SaveParseStatus(ctx context.Context, status models.ParseStatus) error
 }
 ```
 
-**Algorithm**:
-1. First pass: Create VaultNode for each MarkdownFile with valid ID
-2. Build ID→Node lookup map
-3. Second pass: Create VaultEdges from resolved WikiLinks
-4. Handle edge cases: deduplication, unresolved links, missing IDs
+### Step 2: Create Service Layer
+**Directory**: `backend/internal/service/`
 
-**Purpose**: Transform ParseResult into graph structure. Two-pass approach ensures all nodes exist before creating edges. Provides detailed statistics for monitoring.
-
-### Step 5: Implement Graph Metrics Calculator
-**File**: `backend/internal/vault/metrics.go`
-
-**Data Structures**:
-```go
-type NodeMetrics struct {
-    InDegree           int
-    OutDegree          int
-    PageRank           float64
-    ClusteringCoeff    float64
-    ConnectedComponent int
-}
-
-type GraphMetrics struct {
-    TotalNodes         int
-    TotalEdges         int
-    AvgDegree          float64
-    NumComponents      int
-    Density            float64
-    AvgClusteringCoeff float64
-}
-
-type GraphStatistics struct {
-    Metrics        GraphMetrics
-    NodeTypeCount  map[string]int    // Count by type
-    OrphanedNodes  []string          // Nodes with no connections
-    TopNodes       []string          // By PageRank
-    LastUpdated    time.Time
-}
-```
-
-**Algorithms**:
-- **Degree**: Count edges per node
-- **PageRank**: Power iteration with damping factor 0.85
-- **Components**: DFS to find disconnected subgraphs
-- **Clustering**: Ratio of edges between node's neighbors
-
-**Purpose**: Provide insights for visualization (node sizing) and analysis (finding key concepts). Metrics help identify important nodes and graph structure.
-
-### Step 6: Create Database Repositories
-**Files**: `backend/internal/db/node_repository.go`, `edge_repository.go`
-
-**NodeRepository Methods**:
-- `CreateBatch(nodes []VaultNode) error` - Bulk insert with COPY
-- `UpsertBatch(nodes []VaultNode) error` - Insert or update
-- `GetByIDs(ids []string) ([]VaultNode, error)`
-- `Search(query string) ([]VaultNode, error)` - Full-text search
-- `GetByType(nodeType string) ([]VaultNode, error)`
-
-**EdgeRepository Methods**:
-- `CreateBatch(edges []VaultEdge) error`
-- `GetByNode(nodeID string) ([]VaultEdge, error)`
-- `GetSubgraph(nodeIDs []string) ([]VaultEdge, error)`
-- `GetBidirectional(nodeID1, nodeID2 string) ([]VaultEdge, error)`
-
-**Purpose**: Efficient persistence with bulk operations for thousands of nodes/edges. Repository pattern isolates database logic from business logic.
-
-### Step 7: Integration Service
-**File**: `backend/internal/vault/service.go`
-
-**Core Methods**:
+**VaultService** (`vault_service.go`):
 ```go
 type VaultService interface {
-    ParseAndIndex() (*IndexResult, error)
-    GetStatus() (*IndexStatus, error)
-    RefreshMetrics() error
-    GetNode(id string) (*VaultNode, error)
-    SearchNodes(query string) ([]VaultNode, error)
-}
+    // Core operations
+    ParseAndIndexVault(ctx context.Context) (*models.ParseResult, error)
+    GetParseStatus(ctx context.Context) (*models.ParseStatus, error)
 
-type IndexStatus struct {
-    Status      string    // "idle", "parsing", "indexing", "complete"
-    Progress    float64   // 0.0 to 1.0
-    CurrentStep string
-    Error       error
-    StartedAt   time.Time
-    UpdatedAt   time.Time
+    // Graph operations
+    GetFullGraph(ctx context.Context) (*models.Graph, error)
+    GetSubgraph(ctx context.Context, nodeIDs []string) (*models.Graph, error)
+
+    // Node operations
+    GetNode(ctx context.Context, id string) (*models.VaultNode, error)
+    SearchNodes(ctx context.Context, query string) ([]models.VaultNode, error)
+    UpdateNodePositions(ctx context.Context, positions []models.Position) error
 }
 ```
 
-**Workflow**:
-1. Parse vault files
-2. Build graph from parse result
-3. Calculate metrics
-4. Store in database (transaction)
-5. Track progress and handle errors
+**Service Implementation Flow**:
+1. Use GitManager to ensure vault is cloned/updated
+2. Run VaultParser on the cloned directory
+3. Use GraphBuilder to create graph structure
+4. Calculate basic metrics (degree, node types)
+5. Persist everything via repositories (in transaction)
+6. Update parse status and handle errors
 
-**Purpose**: Single entry point orchestrating the complete pipeline. Provides async processing, status tracking, and error recovery. Implements circuit breaker for resilience.
+### Step 3: Update Main Server
+**File**: `backend/cmd/server/main.go`
 
-### Step 8: Comprehensive Testing
+Initialize database connection, load configuration, create repository and service instances with dependency injection.
 
-**Test Coverage**:
-- **Unit Tests**: Each component in isolation
-  - Model validation and serialization
-  - Classification rules and edge cases
-  - Metric calculations with known graphs
-- **Integration Tests**: Complete pipeline
-  - Various vault structures (circular refs, orphans)
-  - Error injection and recovery
-  - Concurrent processing safety
-- **Performance Tests**: Scalability validation
-  - Synthetic vaults: 100, 1K, 10K, 50K nodes
-  - Memory profiling and leak detection
-  - Query performance with indices
+### Step 4: Update API Handlers
+**File**: `backend/internal/api/graph_handlers.go`
 
-**Purpose**: Maintain 90%+ coverage standard. Ensure correctness, reliability, and performance at scale.
+Replace sample data reads with service calls and implement new endpoints for vault management.
 
-### Step 9: Implement Layout Algorithm
-**File**: `backend/internal/layout/force_directed.go`
+### Success Criteria
+- Full pipeline works: Git clone → Parse → Build → Store → API
+- API serves real vault data instead of sample_graph.json
+- Node positions persist across server restarts
+- Error handling and recovery implemented
 
-**Data Structures**:
-```go
-type Position struct {
-    NodeID string
-    X      float64
-    Y      float64
-    Z      float64  // For future 3D layouts
-    Locked bool     // User-pinned nodes
-}
-
-type LayoutConfig struct {
-    Algorithm   string  // "force-directed", "hierarchical"
-    Iterations  int     // Default: 500
-    Temperature float64 // Initial temperature for annealing
-    Gravity     float64 // Pull towards center
-}
-```
-
-**Algorithm**: Fruchterman-Reingold force-directed layout
-- Repulsive forces between all nodes
-- Attractive forces along edges
-- Initial positioning based on node types (index at center, hubs in inner ring)
-- Store final positions in node_positions table
-
-**Purpose**: Generate aesthetically pleasing graph layouts that reveal structure. Node types influence initial positions for better organization.
+### Testing Strategy
+1. **Unit Tests**: Mock repositories for service testing
+2. **Integration Tests**: Test full pipeline with small test vault
+3. **Performance Tests**: Ensure <30s for 50K nodes
+4. **Error Tests**: Network failures, invalid vaults, database errors
 
 ## Phase 4: API Integration
 
 ### Overview
 Replace sample data with real vault data. Add management endpoints for vault operations.
 
-### Updates Required:
-1. **Modify** `graph_handlers.go` - Serve from database instead of JSON
-2. **Add endpoints**:
-   - `GET /api/v1/vault/status` - Parsing status
-   - `POST /api/v1/vault/parse` - Trigger parsing
-   - `GET /api/v1/nodes/:id/content` - Markdown with rendered links
-   - `GET /api/v1/search?q=term` - Full-text search
-3. **Implement Markdown renderer** (`backend/internal/render/markdown.go`):
-   - Convert WikiLinks to clickable HTML links
-   - Support for sections and aliases
-   - Syntax highlighting for code blocks
+### Key Components
+1. **Updated API Handlers**: Serve data from database instead of sample JSON
+2. **Vault Management Endpoints**: Parse control and status monitoring
+3. **Data Access Endpoints**: Node content, search, and position persistence
+4. **Markdown Renderer**: WikiLink to HTML conversion with proper linking
+
+## Phase 5: Caching & Performance (Post-MVP)
+
+### Overview
+Optimize system performance for large vaults (50K+ nodes) through strategic caching and lazy loading.
+
+### Components
+- Redis integration for graph caching
+- Lazy loading for node content
+- Pagination for large result sets
+- Query optimization with database indexes
+- Background metrics calculation
+- Advanced graph layout algorithms. Possibilities:
+  - Force-directed layout (Fruchterman-Reingold)
+  - Hierarchical layout based on node types
+  - Community detection and clustering
+  - Physics-based simulation with configurable forces
+  - Persistent layout state with incremental updates
+
+## Phase 6: File Watching & Live Updates (Post-MVP)
+
+### Overview
+Enable real-time synchronization between vault changes and graph visualization.
+
+### Components
+- File system watcher for local changes
+- Git webhook receiver for remote updates
+- WebSocket server for pushing updates
+- Incremental parsing for changed files
+- Conflict resolution for concurrent edits
+
+## Phase 7: Production Readiness
+
+### Overview
+Prepare the system for production deployment with proper operations, monitoring, and security.
+
+### Step 1: Configuration Management
+**Environment-based Configuration**:
+- Development, staging, production configs
+- Environment variable overrides
+- Secret management (database passwords, API keys)
+- Feature flags for gradual rollout
+
+### Step 2: Observability
+**Structured Logging**:
+- JSON-formatted logs with trace IDs
+- Log levels: DEBUG, INFO, WARN, ERROR
+- Request/response logging with sanitization
+- Performance metrics in logs
+
+**Metrics & Monitoring**:
+- Prometheus metrics endpoint
+- Key metrics:
+  - Parse duration and success rate
+  - API latency (p50, p95, p99)
+  - Database query performance
+  - Git sync success/failure rates
+  - Active graph sessions
+- Grafana dashboards
+
+**Health Checks**:
+- `/health` - Basic liveness check
+- `/ready` - Readiness probe (database, git connectivity)
+- `/metrics` - Prometheus metrics
+
+### Step 3: Deployment
+**Containerization**:
+```dockerfile
+# Multi-stage build for smaller images
+FROM golang:1.21-alpine AS builder
+# Build steps...
+
+FROM alpine:latest
+# Runtime configuration...
+```
+
+**Kubernetes Manifests**:
+- Deployment with rolling updates
+- ConfigMap for configuration
+- Secret for sensitive data
+- Service for load balancing
+- Ingress for external access
+- HorizontalPodAutoscaler for scaling
+
+**Database Migrations**:
+- Migration tool integration (golang-migrate)
+- Version control for schema changes
+- Rollback procedures
+- Zero-downtime migrations
+
+### Step 4: Security
+**API Security**:
+- Rate limiting per IP/user
+- CORS configuration
+- Request size limits
+- Input validation and sanitization
+
+**Vault Security**:
+- Read-only access to vault repositories
+- SSH key management for private repos
+- Audit logging for all operations
+
+### Step 5: Error Handling & Resilience
+**Circuit Breakers**:
+- Git operations timeout and retry
+- Database connection pooling
+- Graceful degradation when services unavailable
+
+**Error Recovery**:
+- Automatic retry with exponential backoff
+- Dead letter queues for failed operations
+- Manual intervention procedures
+
+**Backup & Disaster Recovery**:
+- Database backup strategy
+- Point-in-time recovery
+- Disaster recovery procedures
+
+### Success Criteria
+- [ ] Zero-downtime deployments
+- [ ] <1s health check response time
+- [ ] Automatic scaling based on load
+- [ ] Complete audit trail of operations
+- [ ] Recovery from component failures
+- [ ] Monitoring alerts for critical issues
 
 
 ## Success Metrics
@@ -258,36 +363,80 @@ Replace sample data with real vault data. Add management endpoints for vault ope
 - API response times <100ms for graph queries
 - Test coverage remains >90%
 - Zero data loss during re-indexing
+- Memory usage <1GB for 50K nodes
 
-## Future Optimizations
+### Quick Wins (Can Do Anytime)
+- Add `/health` endpoint for basic monitoring
+- Implement request logging middleware
+- Add database connection pooling
+- Create docker-compose for local development
+- Add GitHub Actions for CI/CD
 
-### Content Field Lazy Loading
-**Problem**: With 50K nodes, loading full markdown content for all nodes uses significant memory (~100MB for 2KB average content) and slows API responses.
+## Risk Mitigation
 
-**Proposed Solution**: Implement lazy loading for the `Content` field in VaultNode to improve performance and reduce memory usage.
+### Technical Risks
 
-**Options**:
-1. **Separate Content Table**: Store content in `node_content` table, load on demand
-2. **Field Selection API**: Support `?fields=id,title,node_type` to exclude content unless requested
-3. **Nullable Content**: Make Content a pointer with `ContentLoaded` flag
+1. **Large Vault Performance (50K+ nodes)**
+   - **Risk**: Initial graph load times out or uses too much memory
+   - **Mitigation**:
+     - Implement pagination from the start
+     - Add `limit` and `offset` to graph endpoint
+     - Stream large responses instead of loading all in memory
+     - Monitor memory usage during development
 
-**Benefits**:
-- Reduce initial graph load time by 80-90%
-- Lower memory footprint for large vaults
-- Faster API responses for graph visualization
-- Better scalability to 50K+ nodes
+2. **Git Operation Failures**
+   - **Risk**: Network issues, large repositories, authentication problems
+   - **Mitigation**:
+     - Add configurable timeouts (default 5 minutes)
+     - Implement shallow cloning for large repos
+     - Cache successful clones and provide offline mode
+     - Clear error messages for auth failures
 
-**Implementation**: Defer until after Phase 4 when we have real-world performance metrics.
+3. **Database Connection Issues**
+   - **Risk**: Connection pool exhaustion, network interruptions
+   - **Mitigation**:
+     - Configure connection pool limits
+     - Implement health checks
+     - Add circuit breaker for database operations
+     - Cache recent data for read-only operations
 
-### Caching
-- Consider caching classification results for large vaults
+4. **Concurrent Parse Operations**
+   - **Risk**: Multiple parse requests causing conflicts
+   - **Mitigation**:
+     - Implement parse queue with single worker
+     - Add status checks before starting new parse
+     - Use database locks for critical sections
+     - Return 409 Conflict for concurrent requests
 
-## Code Quality Improvements
-### Minor Issues
-  2. Test Independence: Some tests might benefit from setup/teardown helpers
-  3. Benchmarks: Could add more realistic benchmarks with actual file operations
+### Operational Risks
 
-## Scratch
+1. **Data Loss During Re-indexing**
+   - **Risk**: Losing user-saved node positions
+   - **Mitigation**:
+     - Never truncate node_positions table
+     - Use upsert operations for nodes/edges
+     - Backup positions before major operations
+     - Add audit log for all mutations
 
-- add validation and database constraints to node.go like the ones in vault.go
-- tool to strip trailing whitespace
+2. **API Breaking Changes**
+   - **Risk**: Frontend breaks when API changes
+   - **Mitigation**:
+     - Version API from start (`/api/v1/`)
+     - Document all endpoints with OpenAPI
+     - Deprecate endpoints before removal
+     - Test frontend/backend together in CI
+
+3. **Security Vulnerabilities**
+   - **Risk**: Exposed credentials, injection attacks
+   - **Mitigation**:
+     - Never log sensitive configuration
+     - Use prepared statements for all queries
+     - Validate and sanitize all inputs
+     - Regular dependency updates
+
+### Performance Targets
+- Parse 1,000 files: <5 seconds
+- Parse 10,000 files: <30 seconds
+- Graph API response: <100ms for 10K nodes
+- Search response: <50ms with indexes
+- Memory usage: <1GB for 50K nodes

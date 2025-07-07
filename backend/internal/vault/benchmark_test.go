@@ -270,7 +270,7 @@ func BenchmarkExtractTitle(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		for _, path := range paths {
-			_ = extractTitle(path)
+			_ = extractTitle(path, nil)
 		}
 	}
 }

@@ -47,8 +47,8 @@ func ProcessMarkdownFile(vaultPath, relativePath string) (*MarkdownFile, error) 
 	// Extract WikiLinks from body content (not frontmatter)
 	links := ExtractWikiLinks(bodyContent)
 
-	// Extract title from filename
-	title := extractTitle(relativePath)
+	// Extract title from frontmatter or filename
+	title := extractTitle(relativePath, frontmatter)
 
 	return &MarkdownFile{
 		Path:        relativePath,
@@ -78,8 +78,8 @@ func ProcessMarkdownReader(reader io.Reader, path string) (*MarkdownFile, error)
 	// Extract WikiLinks
 	links := ExtractWikiLinks(bodyContent)
 
-	// Extract title from path
-	title := extractTitle(path)
+	// Extract title from frontmatter or path
+	title := extractTitle(path, frontmatter)
 
 	return &MarkdownFile{
 		Path:        path,
@@ -91,49 +91,22 @@ func ProcessMarkdownReader(reader io.Reader, path string) (*MarkdownFile, error)
 	}, nil
 }
 
-// extractTitle extracts a clean title from a file path
-func extractTitle(path string) string {
-	// Handle empty path
+// extractTitle extracts a title from a file, preferring frontmatter title over filename
+func extractTitle(path string, frontmatter *FrontmatterData) string {
+	// Check frontmatter first
+	if frontmatter != nil {
+		if title, ok := frontmatter.GetString("title"); ok && title != "" {
+			return title
+		}
+	}
+
+	// Fall back to filename without .md extension
 	if path == "" {
 		return ""
 	}
 
-	// Get the base filename
 	base := filepath.Base(path)
-
-	// Handle the case where base is "." (from empty path)
-	if base == "." {
-		return "."
-	}
-
-	// Remove .md extension
-	title := strings.TrimSuffix(base, ".md")
-
-	// Remove special prefixes (like ~ for hub nodes)
-	title = strings.TrimPrefix(title, "~")
-
-	// Replace underscores and hyphens with spaces for better readability
-	title = strings.ReplaceAll(title, "_", " ")
-	title = strings.ReplaceAll(title, "-", " ")
-
-	// Capitalize first letter of each word while preserving multiple spaces
-	result := ""
-	inWord := false
-	for _, ch := range title {
-		if ch == ' ' {
-			result += " "
-			inWord = false
-		} else if !inWord {
-			// First character of a word
-			result += strings.ToUpper(string(ch))
-			inWord = true
-		} else {
-			// Rest of the word
-			result += strings.ToLower(string(ch))
-		}
-	}
-
-	return result
+	return strings.TrimSuffix(base, ".md")
 }
 
 // GetID returns the unique ID from frontmatter

@@ -11,7 +11,8 @@
       "Bash(go vet:*)",
       "Bash(rg:*)",
       "Bash(find:*)",
-      "Bash(gofmt:*)"
+      "Bash(gofmt:*)",
+      "Bash(./scripts/test-integration.sh:*)"
     ],
     "deny": []
   }

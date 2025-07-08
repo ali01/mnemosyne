@@ -13,7 +13,9 @@
       "Bash(find:*)",
       "Bash(gofmt:*)",
       "Bash(./scripts/test-integration.sh:*)",
-      "Bash(sed:*)"
+      "Bash(sed:*)",
+      "WebFetch(domain:github.com)",
+      "Bash(gh api:*)"
     ],
     "deny": []
   }

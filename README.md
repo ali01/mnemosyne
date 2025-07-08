@@ -1,4 +1,4 @@
-# Mnemosyne
+# Mnemosyne (WIP)
 
 A web-based graph visualizer for Obsidian vault concepts, designed to handle large knowledge graphs with up to 50,000 nodes.
 

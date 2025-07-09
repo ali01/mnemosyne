@@ -17,7 +17,8 @@
       "WebFetch(domain:github.com)",
       "Bash(go build:*)",
       "Bash(rm:*)",
-      "Bash(./scripts/test-all.sh:*)"
+      "Bash(./scripts/test-all.sh:*)",
+      "Bash(mv:*)"
     ],
     "deny": []
   }

@@ -50,7 +50,7 @@ func (tm *TransactionManager) WithTransaction(ctx context.Context, fn func(repos
 	// Execute the function
 	if err := fn(transaction); err != nil {
 		if rollbackErr := transaction.Rollback(ctx); rollbackErr != nil {
-			return fmt.Errorf("transaction failed: %v, rollback failed: %w", err, rollbackErr)
+			return fmt.Errorf("transaction failed: %w; additionally, rollback failed: %v", err, rollbackErr)
 		}
 		return err
 	}
@@ -82,16 +82,16 @@ func (t *postgresTransactionStateless) Commit(ctx context.Context) error {
 	if t.committed || t.rolledback {
 		return fmt.Errorf("transaction already finished")
 	}
-	
+
 	// Check if context is cancelled before committing
 	if err := ctx.Err(); err != nil {
 		return fmt.Errorf("context cancelled before commit: %w", err)
 	}
-	
+
 	if err := t.tx.Commit(); err != nil {
-		return err
+		return fmt.Errorf("failed to commit transaction: %w", err)
 	}
-	
+
 	t.committed = true
 	return nil
 }
@@ -101,7 +101,7 @@ func (t *postgresTransactionStateless) Rollback(ctx context.Context) error {
 	if t.committed || t.rolledback {
 		return nil // Already finished
 	}
-	
+
 	// Check context before rollback
 	if err := ctx.Err(); err != nil {
 		// Still attempt rollback even if context is cancelled
@@ -110,11 +110,11 @@ func (t *postgresTransactionStateless) Rollback(ctx context.Context) error {
 		t.rolledback = true
 		return fmt.Errorf("context cancelled before rollback: %w", err)
 	}
-	
+
 	if err := t.tx.Rollback(); err != nil {
-		return err
+		return fmt.Errorf("failed to rollback transaction: %w", err)
 	}
-	
+
 	t.rolledback = true
 	return nil
 }

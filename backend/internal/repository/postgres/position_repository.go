@@ -4,8 +4,11 @@ package postgres
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"time"
 
+	"github.com/jmoiron/sqlx"
+	"github.com/ali01/mnemosyne/internal/db"
 	"github.com/ali01/mnemosyne/internal/models"
 	"github.com/ali01/mnemosyne/internal/repository"
 )
@@ -24,8 +27,8 @@ func NewPositionRepository() repository.PositionRepository {
 func (r *PositionRepository) GetByNodeID(exec repository.Executor, ctx context.Context, nodeID string) (*models.NodePosition, error) {
 	var position models.NodePosition
 	query := `
-		SELECT node_id, x, y, z, locked, updated_at 
-		FROM node_positions 
+		SELECT node_id, x, y, z, locked, updated_at
+		FROM node_positions
 		WHERE node_id = $1
 	`
 
@@ -69,6 +72,27 @@ func (r *PositionRepository) UpsertBatch(exec repository.Executor, ctx context.C
 		return nil
 	}
 
+	// Check if we're already in a transaction
+	if tx, ok := exec.(*sqlx.Tx); ok {
+		// Already in transaction
+		return r.upsertBatchInTx(tx, ctx, positions)
+	}
+
+	// Not in transaction, need to start one for atomic batch operation
+	sqlxDB, ok := exec.(*sqlx.DB)
+	if !ok {
+		// Fallback to individual upserts
+		return r.upsertBatchIndividual(exec, ctx, positions)
+	}
+
+	// Use transaction for batch upsert
+	return db.WithTransaction(sqlxDB, ctx, func(tx *sqlx.Tx) error {
+		return r.upsertBatchInTx(tx, ctx, positions)
+	})
+}
+
+// upsertBatchInTx performs batch upsert within a transaction
+func (r *PositionRepository) upsertBatchInTx(exec repository.Executor, ctx context.Context, positions []models.NodePosition) error {
 	query := `
 		INSERT INTO node_positions (node_id, x, y, z, locked, updated_at)
 		VALUES (:node_id, :x, :y, :z, :locked, :updated_at)
@@ -83,7 +107,7 @@ func (r *PositionRepository) UpsertBatch(exec repository.Executor, ctx context.C
 	now := time.Now()
 	for i := range positions {
 		positions[i].UpdatedAt = now
-		
+
 		_, err := exec.NamedExecContext(ctx, query, &positions[i])
 		if err != nil {
 			return handlePostgresError(err, "position")
@@ -93,18 +117,28 @@ func (r *PositionRepository) UpsertBatch(exec repository.Executor, ctx context.C
 	return nil
 }
 
+// upsertBatchIndividual performs individual upserts (fallback)
+func (r *PositionRepository) upsertBatchIndividual(exec repository.Executor, ctx context.Context, positions []models.NodePosition) error {
+	for _, position := range positions {
+		if err := r.Upsert(exec, ctx, &position); err != nil {
+			return fmt.Errorf("failed to upsert position for node %s: %w", position.NodeID, err)
+		}
+	}
+	return nil
+}
+
 // GetAll retrieves all node positions
 func (r *PositionRepository) GetAll(exec repository.Executor, ctx context.Context) ([]models.NodePosition, error) {
 	query := `
-		SELECT node_id, x, y, z, locked, updated_at 
-		FROM node_positions 
+		SELECT node_id, x, y, z, locked, updated_at
+		FROM node_positions
 		ORDER BY node_id
 	`
 
 	var positions []models.NodePosition
 	err := exec.SelectContext(ctx, &positions, query)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get all positions: %w", err)
 	}
 
 	return positions, nil
@@ -114,19 +148,11 @@ func (r *PositionRepository) GetAll(exec repository.Executor, ctx context.Contex
 func (r *PositionRepository) DeleteByNodeID(exec repository.Executor, ctx context.Context, nodeID string) error {
 	query := `DELETE FROM node_positions WHERE node_id = $1`
 
-	result, err := exec.ExecContext(ctx, query, nodeID)
+	_, err := exec.ExecContext(ctx, query, nodeID)
 	if err != nil {
 		return handlePostgresError(err, "position")
 	}
 
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		return err
-	}
-
-	if rowsAffected == 0 {
-		return &NotFoundError{Resource: "position", ID: nodeID}
-	}
-
+	// Delete is idempotent - don't return error if position doesn't exist
 	return nil
 }

@@ -4,6 +4,7 @@ package postgres
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -94,9 +95,9 @@ func (r *MetadataRepository) CreateParseRecord(exec repository.Executor, ctx con
 func (r *MetadataRepository) GetLatestParse(exec repository.Executor, ctx context.Context) (*models.ParseHistory, error) {
 	var record models.ParseHistory
 	query := `
-		SELECT id, started_at, completed_at, status, stats, error 
-		FROM parse_history 
-		ORDER BY started_at DESC 
+		SELECT id, started_at, completed_at, status, stats, error
+		FROM parse_history
+		ORDER BY started_at DESC
 		LIMIT 1
 	`
 
@@ -118,16 +119,16 @@ func (r *MetadataRepository) GetParseHistory(exec repository.Executor, ctx conte
 	}
 
 	query := `
-		SELECT id, started_at, completed_at, status, stats, error 
-		FROM parse_history 
-		ORDER BY started_at DESC 
+		SELECT id, started_at, completed_at, status, stats, error
+		FROM parse_history
+		ORDER BY started_at DESC
 		LIMIT $1
 	`
 
 	var records []models.ParseHistory
 	err := exec.SelectContext(ctx, &records, query, limit)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get parse history: %w", err)
 	}
 
 	return records, nil
@@ -156,7 +157,7 @@ func (r *MetadataRepository) UpdateParseStatus(exec repository.Executor, ctx con
 
 	rowsAffected, err := result.RowsAffected()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get affected rows: %w", err)
 	}
 
 	if rowsAffected == 0 {

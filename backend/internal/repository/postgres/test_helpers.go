@@ -1,13 +1,22 @@
 // Package postgres provides test helpers for integration tests
+//
+// Test Helper Usage Guide:
+// - Use CreateTestDB() when you only need a database connection
+// - Use CreateTestRepositories() when you need both database and repositories
+// - All helpers handle container setup and cleanup automatically
 package postgres
 
 import (
 	"context"
 	"fmt"
-	"os"
 	"testing"
+	"time"
 
 	"github.com/jmoiron/sqlx"
+	"github.com/testcontainers/testcontainers-go"
+	"github.com/testcontainers/testcontainers-go/modules/postgres"
+	"github.com/testcontainers/testcontainers-go/wait"
+
 	"github.com/ali01/mnemosyne/internal/db"
 	"github.com/ali01/mnemosyne/internal/repository"
 )
@@ -19,38 +28,72 @@ type TestDB struct {
 }
 
 // NewTestDB creates a new test database connection
-// It reads configuration from environment variables or uses defaults
+// It uses testcontainers to spin up a PostgreSQL instance
 func NewTestDB(t *testing.T) *TestDB {
 	t.Helper()
 
-	// Read config from environment or use defaults
-	cfg := db.Config{
-		Host:     getEnvOrDefault("TEST_DB_HOST", "localhost"),
-		Port:     5432,
-		User:     getEnvOrDefault("TEST_DB_USER", "postgres"),
-		Password: getEnvOrDefault("TEST_DB_PASSWORD", "postgres"),
-		DBName:   getEnvOrDefault("TEST_DB_NAME", "mnemosyne_test"),
-		SSLMode:  getEnvOrDefault("TEST_DB_SSLMODE", "disable"),
-	}
+	ctx := context.Background()
 
-	// Try to connect
-	database, err := db.Connect(cfg)
+	// Check if Docker is available before attempting to create containers
+	dockerClient, err := testcontainers.NewDockerClientWithOpts(ctx)
 	if err != nil {
-		t.Skipf("Failed to connect to test database: %v", err)
+		t.Skipf("Docker is not available: %v", err)
+	}
+	defer dockerClient.Close()
+
+	// Also check Docker daemon is responsive
+	_, err = dockerClient.Ping(ctx)
+	if err != nil {
+		t.Skipf("Docker daemon is not responsive: %v", err)
 	}
 
-	// Run migrations if schema file exists
-	schemaPath := "../../../db/schema.sql"
-	if schemaSQL, err := os.ReadFile(schemaPath); err == nil {
-		if err := db.ExecuteSchema(database, string(schemaSQL)); err != nil {
-			t.Logf("Warning: Failed to execute schema: %v", err)
+	// Catch any unexpected panics from testcontainers
+	defer func() {
+		if r := recover(); r != nil {
+			t.Skipf("Failed to start PostgreSQL container (unexpected panic): %v", r)
 		}
+	}()
+
+	// Create PostgreSQL container
+	pgContainer, err := postgres.Run(ctx,
+		"postgres:16-alpine",
+		postgres.WithDatabase("mnemosyne_test"),
+		postgres.WithUsername("postgres"),
+		postgres.WithPassword("postgres"),
+		testcontainers.WithWaitStrategy(
+			wait.ForLog("database system is ready to accept connections").
+				WithOccurrence(2).
+				WithStartupTimeout(30*time.Second),
+		),
+	)
+	if err != nil {
+		t.Skipf("Failed to start PostgreSQL container (is Docker running?): %v", err)
+	}
+
+	// Get connection string
+	connStr, err := pgContainer.ConnectionString(ctx, "sslmode=disable")
+	if err != nil {
+		t.Fatalf("Failed to get connection string: %v", err)
+	}
+
+	// Connect to database
+	dbx, err := sqlx.Connect("postgres", connStr)
+	if err != nil {
+		t.Fatalf("Failed to connect to database: %v", err)
+	}
+
+	// Run embedded schema
+	if err := db.ExecuteSchema(dbx, db.SchemaSQL); err != nil {
+		t.Fatalf("Failed to execute schema: %v", err)
 	}
 
 	return &TestDB{
-		DB: database,
+		DB: dbx,
 		cleanup: func() {
-			database.Close()
+			dbx.Close()
+			if err := pgContainer.Terminate(ctx); err != nil {
+				t.Logf("Failed to terminate container: %v", err)
+			}
 		},
 	}
 }
@@ -83,20 +126,21 @@ func (tdb *TestDB) CleanTables(ctx context.Context) error {
 	return nil
 }
 
-// getEnvOrDefault returns environment variable value or default
-func getEnvOrDefault(key, defaultValue string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
-	}
-	return defaultValue
+
+// CreateTestDB creates a test database for simple database tests
+// Use this when you only need a database connection without repositories
+func CreateTestDB(t *testing.T) *TestDB {
+	t.Helper()
+	return NewTestDB(t)
 }
 
 // CreateTestRepositories creates all repositories for testing
+// Use this when you need both database and repository instances
 func CreateTestRepositories(t *testing.T) (*TestDB, *TestRepositories) {
 	t.Helper()
 
 	tdb := NewTestDB(t)
-	
+
 	repos := &TestRepositories{
 		Nodes:        NewNodeRepository(),
 		Edges:        NewEdgeRepository(),

@@ -529,7 +529,7 @@ func TestCreateNode_WithMetadata(t *testing.T) {
 
 	assert.Equal(t, "test", node.ID)
 	assert.Equal(t, "Custom Title", node.Title) // Uses title from MarkdownFile
-	assert.Equal(t, []string{"tag1", "tag2"}, node.Tags)
+	assert.Equal(t, models.StringArray{"tag1", "tag2"}, node.Tags)
 	assert.Equal(t, "Test content", node.Content)
 	assert.Equal(t, "test.md", node.FilePath)
 	assert.Equal(t, "note", node.NodeType) // Default from classifier

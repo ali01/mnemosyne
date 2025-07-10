@@ -176,7 +176,6 @@ For implementation status and component details, see `ROADMAP.md`.
 - `backend/config.yaml` - All configuration options with examples
 - `backend/data/sample_graph.json` - Current API data source (temporary)
 - `backend/internal/models/vault.go` - Core data structures (VaultNode, VaultEdge)
-- `backend/scripts/test-integration.sh` - Integration test setup (awaiting integration)
 
 ### Architecture Decisions
 - **Two Model Sets**: `models.Node/Edge` (API) vs `models.VaultNode/VaultEdge` (database)
@@ -239,9 +238,9 @@ Multiple indexes on foreign keys, node types, tags, and full-text search
   - JSON serialization/deserialization
 
 ### Missing Tests
-- **Integration Tests**: No end-to-end integration to test yet
-  - `test-integration.sh` exists but awaits VaultService implementation
-  - Repository and service layers are individually tested
+- **Integration Tests**: PostgreSQL repository tests use testcontainers
+  - Each test spins up its own PostgreSQL container
+  - Tests skip gracefully when Docker is not available
 - **API Tests**: Tests with real database queries
   - Repository layer has comprehensive test coverage
   - Mock repositories are implemented and tested
@@ -264,8 +263,8 @@ go test -bench=. -benchmem ./internal/vault/...
 # Linting (0 issues expected)
 golangci-lint run --config=.golangci.yml
 
-# Integration tests (placeholder for now)
-./scripts/test-integration.sh
+# Integration tests (requires Docker)
+go test ./internal/repository/postgres/... -v
 ```
 
 ### Test Data Locations

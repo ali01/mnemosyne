@@ -58,6 +58,13 @@ func ExecuteSchema(db *sqlx.DB, schemaSQL string) error {
 // WithTransaction executes a function within a database transaction with context support
 // Automatically handles commit/rollback and panics
 func WithTransaction(db *sqlx.DB, ctx context.Context, fn func(*sqlx.Tx) error) error {
+	if db == nil {
+		return fmt.Errorf("database is nil")
+	}
+	if fn == nil {
+		return fmt.Errorf("transaction function is nil")
+	}
+
 	tx, err := db.BeginTxx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
@@ -76,7 +83,7 @@ func WithTransaction(db *sqlx.DB, ctx context.Context, fn func(*sqlx.Tx) error) 
 
 	if err := fn(tx); err != nil {
 		if rbErr := tx.Rollback(); rbErr != nil {
-			return fmt.Errorf("transaction failed: %v, rollback failed: %w", err, rbErr)
+			return fmt.Errorf("transaction failed: %w; additionally, rollback failed: %v", err, rbErr)
 		}
 		return err
 	}

@@ -51,9 +51,12 @@ func TestMetadataRepositoryStateless(t *testing.T) {
 		initial := &models.VaultMetadata{
 			Key:       "update.test",
 			Value:     "initial value",
-			UpdatedAt: time.Now(),
 		}
 		err := repos.Metadata.SetMetadata(tdb.DB, ctx, initial)
+		require.NoError(t, err)
+		
+		// Get the actual initial timestamp
+		initialRetrieved, err := repos.Metadata.GetMetadata(tdb.DB, ctx, "update.test")
 		require.NoError(t, err)
 
 		// Update the value
@@ -61,7 +64,6 @@ func TestMetadataRepositoryStateless(t *testing.T) {
 		updated := &models.VaultMetadata{
 			Key:       "update.test",
 			Value:     "updated value",
-			UpdatedAt: time.Now(),
 		}
 		err = repos.Metadata.SetMetadata(tdb.DB, ctx, updated)
 		assert.NoError(t, err)
@@ -70,7 +72,7 @@ func TestMetadataRepositoryStateless(t *testing.T) {
 		retrieved, err := repos.Metadata.GetMetadata(tdb.DB, ctx, "update.test")
 		require.NoError(t, err)
 		assert.Equal(t, "updated value", retrieved.Value)
-		assert.True(t, retrieved.UpdatedAt.After(initial.UpdatedAt))
+		assert.True(t, retrieved.UpdatedAt.After(initialRetrieved.UpdatedAt))
 	})
 
 	t.Run("GetMetadata_NotFound", func(t *testing.T) {
@@ -151,6 +153,9 @@ func TestMetadataRepositoryStateless(t *testing.T) {
 	})
 
 	t.Run("GetLatestParse", func(t *testing.T) {
+		// Clean up any existing parse records
+		_, _ = tdb.ExecContext(ctx, "DELETE FROM parse_history")
+		
 		// Create multiple parse records
 		now := time.Now()
 		records := []models.ParseHistory{
@@ -192,8 +197,16 @@ func TestMetadataRepositoryStateless(t *testing.T) {
 		// Get latest
 		latest, err := repos.Metadata.GetLatestParse(tdb.DB, ctx)
 		assert.NoError(t, err)
+		require.NotNil(t, latest)
+		
+		// Debug output
+		t.Logf("Latest parse: Status=%s, TotalNodes=%d, TotalEdges=%d", 
+			latest.Status, latest.Stats.TotalNodes, latest.Stats.TotalEdges)
+		
 		assert.Equal(t, models.ParseStatusRunning, latest.Status)
+		// Check that we got the most recent record (the one with TotalNodes = 5)
 		assert.Equal(t, 5, latest.Stats.TotalNodes)
+		assert.Equal(t, 10, latest.Stats.TotalEdges)
 		assert.Nil(t, latest.CompletedAt)
 	})
 

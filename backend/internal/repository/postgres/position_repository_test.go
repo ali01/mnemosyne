@@ -29,9 +29,9 @@ func TestPositionRepositoryStateless(t *testing.T) {
 
 	// Create test nodes that positions will reference
 	testNodes := []models.VaultNode{
-		{ID: "pos-node-1", Title: "Position Node 1", FilePath: "/pos/1.md"},
-		{ID: "pos-node-2", Title: "Position Node 2", FilePath: "/pos/2.md"},
-		{ID: "pos-node-3", Title: "Position Node 3", FilePath: "/pos/3.md"},
+		{ID: "pos-node-1", Title: "Position Node 1", FilePath: "/pos/1.md", NodeType: "note"},
+		{ID: "pos-node-2", Title: "Position Node 2", FilePath: "/pos/2.md", NodeType: "note"},
+		{ID: "pos-node-3", Title: "Position Node 3", FilePath: "/pos/3.md", NodeType: "note"},
 	}
 	err := repos.Nodes.CreateBatch(tdb.DB, ctx, testNodes)
 	require.NoError(t, err)
@@ -73,6 +73,13 @@ func TestPositionRepositoryStateless(t *testing.T) {
 		err := repos.Positions.Upsert(tdb.DB, ctx, initial)
 		require.NoError(t, err)
 
+		// Get the actual initial timestamp from DB
+		initialRetrieved, err := repos.Positions.GetByNodeID(tdb.DB, ctx, "pos-node-2")
+		require.NoError(t, err)
+
+		// Sleep to ensure timestamp difference
+		time.Sleep(10 * time.Millisecond)
+
 		// Update the position
 		updated := &models.NodePosition{
 			NodeID:    "pos-node-2",
@@ -92,7 +99,7 @@ func TestPositionRepositoryStateless(t *testing.T) {
 		assert.Equal(t, updated.Y, retrieved.Y)
 		assert.Equal(t, updated.Z, retrieved.Z)
 		assert.Equal(t, updated.Locked, retrieved.Locked)
-		assert.True(t, retrieved.UpdatedAt.After(initial.UpdatedAt))
+		assert.True(t, retrieved.UpdatedAt.After(initialRetrieved.UpdatedAt))
 	})
 
 	t.Run("Upsert_NonExistentNode", func(t *testing.T) {
@@ -190,6 +197,17 @@ func TestPositionRepositoryStateless(t *testing.T) {
 	})
 
 	t.Run("UpsertBatch_PartialFailure", func(t *testing.T) {
+		// First create a position with known values
+		initialPos := &models.NodePosition{
+			NodeID:    "pos-node-1",
+			X:         100,
+			Y:         200,
+			UpdatedAt: time.Now(),
+		}
+		err := repos.Positions.Upsert(tdb.DB, ctx, initialPos)
+		require.NoError(t, err)
+
+		// Try to update with a batch that includes an invalid node
 		positions := []models.NodePosition{
 			{
 				NodeID:    "pos-node-1",
@@ -205,21 +223,21 @@ func TestPositionRepositoryStateless(t *testing.T) {
 			},
 		}
 
-		err := repos.Positions.UpsertBatch(tdb.DB, ctx, positions)
+		err = repos.Positions.UpsertBatch(tdb.DB, ctx, positions)
 		assert.Error(t, err)
 
 		// In a transaction, nothing should be updated
 		pos1, err := repos.Positions.GetByNodeID(tdb.DB, ctx, "pos-node-1")
-		if err == nil {
-			// If position exists from previous test, check it wasn't updated to 700
-			assert.NotEqual(t, float64(700), pos1.X)
-		}
+		require.NoError(t, err)
+		// Position should still have original values due to transaction rollback
+		assert.Equal(t, float64(100), pos1.X)
+		assert.Equal(t, float64(200), pos1.Y)
 	})
 
 	t.Run("GetAll", func(t *testing.T) {
 		// Clean positions and create known set
 		require.NoError(t, tdb.CleanTables(ctx))
-		
+
 		// Recreate nodes
 		err := repos.Nodes.CreateBatch(tdb.DB, ctx, testNodes)
 		require.NoError(t, err)

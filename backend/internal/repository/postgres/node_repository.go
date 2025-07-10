@@ -27,6 +27,7 @@ func NewNodeRepository() repository.NodeRepository {
 	return &NodeRepository{}
 }
 
+
 // Create inserts a new node into the database
 func (r *NodeRepository) Create(exec repository.Executor, ctx context.Context, node *models.VaultNode) error {
 	if node.ID == "" {
@@ -38,13 +39,16 @@ func (r *NodeRepository) Create(exec repository.Executor, ctx context.Context, n
 	node.UpdatedAt = now
 
 	query := `
-		INSERT INTO nodes (id, title, node_type, tags, content, metadata, file_path,
+		INSERT INTO nodes (id, title, node_type, tags, content, frontmatter, file_path,
 		                  in_degree, out_degree, centrality, created_at, updated_at)
-		VALUES (:id, :title, :node_type, :tags, :content, :metadata, :file_path,
-		        :in_degree, :out_degree, :centrality, :created_at, :updated_at)
+		VALUES ($1, $2, NULLIF($3, ''), $4, NULLIF($5, ''), $6, $7, $8, $9, $10, $11, $12)
 	`
 
-	_, err := exec.NamedExecContext(ctx, query, node)
+	_, err := exec.ExecContext(ctx, query,
+		node.ID, node.Title, node.NodeType, node.Tags, node.Content,
+		node.Metadata, node.FilePath, node.InDegree, node.OutDegree,
+		node.Centrality, node.CreatedAt, node.UpdatedAt,
+	)
 	if err != nil {
 		return handlePostgresError(err, "node")
 	}
@@ -55,7 +59,9 @@ func (r *NodeRepository) Create(exec repository.Executor, ctx context.Context, n
 // GetByID retrieves a node by its ID
 func (r *NodeRepository) GetByID(exec repository.Executor, ctx context.Context, id string) (*models.VaultNode, error) {
 	var node models.VaultNode
-	query := `SELECT * FROM nodes WHERE id = $1`
+	query := `SELECT id, title, COALESCE(node_type, '') AS node_type, tags, COALESCE(content, '') AS content, frontmatter AS metadata, file_path,
+	          in_degree, out_degree, centrality, created_at, updated_at
+	          FROM nodes WHERE id = $1`
 
 	err := exec.GetContext(ctx, &node, query, id)
 	if err != nil {
@@ -74,14 +80,17 @@ func (r *NodeRepository) Update(exec repository.Executor, ctx context.Context, n
 
 	query := `
 		UPDATE nodes
-		SET title = :title, node_type = :node_type, tags = :tags,
-		    content = :content, metadata = :metadata, file_path = :file_path,
-		    in_degree = :in_degree, out_degree = :out_degree, centrality = :centrality,
-		    updated_at = :updated_at
-		WHERE id = :id
+		SET title = $2, node_type = NULLIF($3, ''), tags = $4, content = NULLIF($5, ''),
+		    frontmatter = $6, file_path = $7, in_degree = $8,
+		    out_degree = $9, centrality = $10, updated_at = $11
+		WHERE id = $1
 	`
 
-	result, err := exec.NamedExecContext(ctx, query, node)
+	result, err := exec.ExecContext(ctx, query,
+		node.ID, node.Title, node.NodeType, node.Tags, node.Content,
+		node.Metadata, node.FilePath, node.InDegree, node.OutDegree,
+		node.Centrality, node.UpdatedAt,
+	)
 	if err != nil {
 		return handlePostgresError(err, "node")
 	}
@@ -102,20 +111,12 @@ func (r *NodeRepository) Update(exec repository.Executor, ctx context.Context, n
 func (r *NodeRepository) Delete(exec repository.Executor, ctx context.Context, id string) error {
 	query := `DELETE FROM nodes WHERE id = $1`
 
-	result, err := exec.ExecContext(ctx, query, id)
+	_, err := exec.ExecContext(ctx, query, id)
 	if err != nil {
 		return handlePostgresError(err, "node")
 	}
 
-	rows, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("failed to get affected rows: %w", err)
-	}
-
-	if rows == 0 {
-		return &NotFoundError{Resource: "node", ID: id}
-	}
-
+	// Delete is idempotent - don't return error if node doesn't exist
 	return nil
 }
 
@@ -146,11 +147,18 @@ func (r *NodeRepository) CreateBatch(exec repository.Executor, ctx context.Conte
 
 // createBatchWithCopy uses PostgreSQL COPY for efficient batch insert
 func (r *NodeRepository) createBatchWithCopy(ctx context.Context, tx *sqlx.Tx, nodes []models.VaultNode) error {
+	// Validate all nodes before starting the batch operation
+	for i, node := range nodes {
+		if err := r.validateNode(&node); err != nil {
+			return fmt.Errorf("validation failed for node at index %d: %w", i, err)
+		}
+	}
+
 	stmt, err := tx.PrepareContext(ctx, pq.CopyIn("nodes",
-		"id", "title", "node_type", "tags", "content", "metadata", "file_path",
+		"id", "title", "node_type", "tags", "content", "frontmatter", "file_path",
 		"in_degree", "out_degree", "centrality", "created_at", "updated_at"))
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to prepare batch insert: %w", err)
 	}
 	defer stmt.Close()
 
@@ -163,7 +171,7 @@ func (r *NodeRepository) createBatchWithCopy(ctx context.Context, tx *sqlx.Tx, n
 		node.UpdatedAt = now
 
 		_, err = stmt.Exec(
-			node.ID, node.Title, node.NodeType, pq.Array(node.Tags),
+			node.ID, node.Title, node.NodeType, node.Tags,
 			node.Content, node.Metadata, node.FilePath,
 			node.InDegree, node.OutDegree, node.Centrality,
 			node.CreatedAt, node.UpdatedAt,
@@ -174,7 +182,10 @@ func (r *NodeRepository) createBatchWithCopy(ctx context.Context, tx *sqlx.Tx, n
 	}
 
 	_, err = stmt.Exec()
-	return err
+	if err != nil {
+		return fmt.Errorf("failed to execute batch insert: %w", err)
+	}
+	return nil
 }
 
 // createBatchIndividual inserts nodes one by one (fallback)
@@ -214,16 +225,15 @@ func (r *NodeRepository) UpsertBatch(exec repository.Executor, ctx context.Conte
 // upsertBatchInTx performs batch upsert within a transaction
 func (r *NodeRepository) upsertBatchInTx(exec repository.Executor, ctx context.Context, nodes []models.VaultNode) error {
 	query := `
-		INSERT INTO nodes (id, title, node_type, tags, content, metadata, file_path,
+		INSERT INTO nodes (id, title, node_type, tags, content, frontmatter, file_path,
 		                  in_degree, out_degree, centrality, created_at, updated_at)
-		VALUES (:id, :title, :node_type, :tags, :content, :metadata, :file_path,
-		        :in_degree, :out_degree, :centrality, :created_at, :updated_at)
+		VALUES ($1, $2, NULLIF($3, ''), $4, NULLIF($5, ''), $6, $7, $8, $9, $10, $11, $12)
 		ON CONFLICT (id) DO UPDATE SET
 			title = EXCLUDED.title,
 			node_type = EXCLUDED.node_type,
 			tags = EXCLUDED.tags,
 			content = EXCLUDED.content,
-			metadata = EXCLUDED.metadata,
+			frontmatter = EXCLUDED.frontmatter,
 			file_path = EXCLUDED.file_path,
 			in_degree = EXCLUDED.in_degree,
 			out_degree = EXCLUDED.out_degree,
@@ -241,7 +251,11 @@ func (r *NodeRepository) upsertBatchInTx(exec repository.Executor, ctx context.C
 		}
 		node.UpdatedAt = now
 
-		_, err := exec.NamedExecContext(ctx, query, node)
+		_, err := exec.ExecContext(ctx, query,
+			node.ID, node.Title, node.NodeType, node.Tags, node.Content,
+			node.Metadata, node.FilePath, node.InDegree, node.OutDegree,
+			node.Centrality, node.CreatedAt, node.UpdatedAt,
+		)
 		if err != nil {
 			return handlePostgresError(err, "node")
 		}
@@ -272,7 +286,9 @@ func (r *NodeRepository) upsertBatchIndividual(exec repository.Executor, ctx con
 // GetAll retrieves all nodes with pagination
 func (r *NodeRepository) GetAll(exec repository.Executor, ctx context.Context, limit, offset int) ([]models.VaultNode, error) {
 	var nodes []models.VaultNode
-	query := `SELECT * FROM nodes ORDER BY created_at DESC LIMIT $1 OFFSET $2`
+	query := `SELECT id, title, COALESCE(node_type, '') AS node_type, tags, COALESCE(content, '') AS content, frontmatter AS metadata, file_path,
+	          in_degree, out_degree, centrality, created_at, updated_at
+	          FROM nodes ORDER BY created_at DESC LIMIT $1 OFFSET $2`
 
 	err := exec.SelectContext(ctx, &nodes, query, limit, offset)
 	if err != nil {
@@ -289,7 +305,9 @@ func (r *NodeRepository) GetByIDs(exec repository.Executor, ctx context.Context,
 	}
 
 	var nodes []models.VaultNode
-	query := `SELECT * FROM nodes WHERE id = ANY($1)`
+	query := `SELECT id, title, COALESCE(node_type, '') AS node_type, tags, COALESCE(content, '') AS content, frontmatter AS metadata, file_path,
+	          in_degree, out_degree, centrality, created_at, updated_at
+	          FROM nodes WHERE id = ANY($1)`
 
 	err := exec.SelectContext(ctx, &nodes, query, pq.Array(ids))
 	if err != nil {
@@ -302,7 +320,9 @@ func (r *NodeRepository) GetByIDs(exec repository.Executor, ctx context.Context,
 // GetByType retrieves all nodes of a specific type
 func (r *NodeRepository) GetByType(exec repository.Executor, ctx context.Context, nodeType string) ([]models.VaultNode, error) {
 	var nodes []models.VaultNode
-	query := `SELECT * FROM nodes WHERE node_type = $1 ORDER BY created_at DESC`
+	query := `SELECT id, title, COALESCE(node_type, '') AS node_type, tags, COALESCE(content, '') AS content, frontmatter AS metadata, file_path,
+	          in_degree, out_degree, centrality, created_at, updated_at
+	          FROM nodes WHERE node_type = $1 ORDER BY created_at DESC`
 
 	err := exec.SelectContext(ctx, &nodes, query, nodeType)
 	if err != nil {
@@ -315,7 +335,9 @@ func (r *NodeRepository) GetByType(exec repository.Executor, ctx context.Context
 // GetByPath retrieves a node by its file path
 func (r *NodeRepository) GetByPath(exec repository.Executor, ctx context.Context, path string) (*models.VaultNode, error) {
 	var node models.VaultNode
-	query := `SELECT * FROM nodes WHERE file_path = $1`
+	query := `SELECT id, title, COALESCE(node_type, '') AS node_type, tags, COALESCE(content, '') AS content, frontmatter AS metadata, file_path,
+	          in_degree, out_degree, centrality, created_at, updated_at
+	          FROM nodes WHERE file_path = $1`
 
 	err := exec.GetContext(ctx, &node, query, path)
 	if err != nil {
@@ -336,7 +358,9 @@ func (r *NodeRepository) Search(exec repository.Executor, ctx context.Context, q
 
 	var nodes []models.VaultNode
 	searchQuery := `
-		SELECT * FROM nodes
+		SELECT id, title, COALESCE(node_type, '') AS node_type, tags, COALESCE(content, '') AS content, frontmatter AS metadata, file_path,
+		       in_degree, out_degree, centrality, created_at, updated_at
+		FROM nodes
 		WHERE search_vector @@ plainto_tsquery('english', $1)
 		ORDER BY ts_rank(search_vector, plainto_tsquery('english', $1)) DESC
 		LIMIT 100
@@ -373,5 +397,17 @@ func (r *NodeRepository) DeleteAll(exec repository.Executor, ctx context.Context
 		return fmt.Errorf("failed to delete all nodes: %w", err)
 	}
 
+	return nil
+}
+
+// validateNode checks that required fields are present
+func (r *NodeRepository) validateNode(node *models.VaultNode) error {
+	if node.Title == "" {
+		return fmt.Errorf("node title is required")
+	}
+	if node.FilePath == "" {
+		return fmt.Errorf("node file path is required")
+	}
+	// ID can be empty as it will be generated if not provided
 	return nil
 }

@@ -51,9 +51,9 @@ func (tm *TransactionManager) WithTransaction(ctx context.Context, fn func(repos
 	if err := fn(tx); err != nil {
 		// Rollback on error
 		if rollbackErr := tx.Rollback(ctx); rollbackErr != nil {
-			return fmt.Errorf("transaction failed: %v, rollback failed: %w", err, rollbackErr)
+			return fmt.Errorf("transaction failed: %w; additionally, rollback failed: %v", err, rollbackErr)
 		}
-		return err
+		return fmt.Errorf("transaction failed: %w", err)
 	}
 
 	// Auto-commit if not already committed or rolled back

@@ -15,8 +15,9 @@ import (
 	"github.com/ali01/mnemosyne/internal/repository"
 )
 
-// TestNodeRepositoryStateless runs comprehensive integration tests for the PostgreSQL node repository
-func TestNodeRepositoryStateless(t *testing.T) {
+// TestNodeRepository runs comprehensive integration tests for the PostgreSQL node repository
+// These tests use testcontainers to spin up a PostgreSQL instance
+func TestNodeRepository(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration test")
 	}
@@ -35,7 +36,7 @@ func TestNodeRepositoryStateless(t *testing.T) {
 			Title:    "Test Node",
 			FilePath: "/test/path.md",
 			NodeType: "note",
-			Tags:     []string{"test", "integration"},
+			Tags:     models.StringArray{"test", "integration"},
 			Content:  "Test content",
 			Metadata: map[string]interface{}{
 				"author": "test",
@@ -62,6 +63,7 @@ func TestNodeRepositoryStateless(t *testing.T) {
 			ID:       "duplicate-node",
 			Title:    "First Node",
 			FilePath: "/test/dup1.md",
+			NodeType: "note",
 		}
 
 		// Create first node
@@ -73,6 +75,7 @@ func TestNodeRepositoryStateless(t *testing.T) {
 			ID:       "duplicate-node",
 			Title:    "Second Node",
 			FilePath: "/test/dup2.md",
+			NodeType: "note",
 		}
 		err = repos.Nodes.Create(tdb.DB, ctx, node2)
 		assert.Error(t, err)
@@ -99,10 +102,10 @@ func TestNodeRepositoryStateless(t *testing.T) {
 
 		// Update the node
 		node.Title = "Updated Title"
-		node.Tags = []string{"updated", "modified"}
+		node.Tags = models.StringArray{"updated", "modified"}
 		node.Content = "Updated content"
 		node.NodeType = "reference"
-		
+
 		time.Sleep(10 * time.Millisecond) // Ensure UpdatedAt changes
 		err = repos.Nodes.Update(tdb.DB, ctx, node)
 		assert.NoError(t, err)
@@ -111,7 +114,7 @@ func TestNodeRepositoryStateless(t *testing.T) {
 		retrieved, err := repos.Nodes.GetByID(tdb.DB, ctx, node.ID)
 		require.NoError(t, err)
 		assert.Equal(t, "Updated Title", retrieved.Title)
-		assert.Equal(t, []string{"updated", "modified"}, retrieved.Tags)
+		assert.Equal(t, models.StringArray{"updated", "modified"}, retrieved.Tags)
 		assert.Equal(t, "Updated content", retrieved.Content)
 		assert.Equal(t, "reference", retrieved.NodeType)
 		assert.True(t, retrieved.UpdatedAt.After(retrieved.CreatedAt))
@@ -132,12 +135,13 @@ func TestNodeRepositoryStateless(t *testing.T) {
 			ID:       "test-node-delete",
 			Title:    "To Be Deleted",
 			FilePath: "/test/delete.md",
+			NodeType: "note",
 		}
 
 		// Create and verify
 		err := repos.Nodes.Create(tdb.DB, ctx, node)
 		require.NoError(t, err)
-		
+
 		_, err = repos.Nodes.GetByID(tdb.DB, ctx, node.ID)
 		require.NoError(t, err)
 
@@ -159,9 +163,9 @@ func TestNodeRepositoryStateless(t *testing.T) {
 
 	t.Run("CreateBatch", func(t *testing.T) {
 		nodes := []models.VaultNode{
-			{ID: "batch-1", Title: "Batch Node 1", FilePath: "/batch/1.md"},
-			{ID: "batch-2", Title: "Batch Node 2", FilePath: "/batch/2.md"},
-			{ID: "batch-3", Title: "Batch Node 3", FilePath: "/batch/3.md"},
+			{ID: "batch-1", Title: "Batch Node 1", FilePath: "/batch/1.md", NodeType: "note"},
+			{ID: "batch-2", Title: "Batch Node 2", FilePath: "/batch/2.md", NodeType: "note"},
+			{ID: "batch-3", Title: "Batch Node 3", FilePath: "/batch/3.md", NodeType: "note"},
 		}
 
 		err := repos.Nodes.CreateBatch(tdb.DB, ctx, nodes)
@@ -181,15 +185,16 @@ func TestNodeRepositoryStateless(t *testing.T) {
 			ID:       "batch-existing",
 			Title:    "Existing Node",
 			FilePath: "/batch/existing.md",
+			NodeType: "note",
 		}
 		err := repos.Nodes.Create(tdb.DB, ctx, existing)
 		require.NoError(t, err)
 
 		// Try batch with duplicate
 		nodes := []models.VaultNode{
-			{ID: "batch-new-1", Title: "New Node 1", FilePath: "/batch/new1.md"},
-			{ID: "batch-existing", Title: "Duplicate", FilePath: "/batch/dup.md"}, // This will fail
-			{ID: "batch-new-2", Title: "New Node 2", FilePath: "/batch/new2.md"},
+			{ID: "batch-new-1", Title: "New Node 1", FilePath: "/batch/new1.md", NodeType: "note"},
+			{ID: "batch-existing", Title: "Duplicate", FilePath: "/batch/dup.md", NodeType: "note"}, // This will fail
+			{ID: "batch-new-2", Title: "New Node 2", FilePath: "/batch/new2.md", NodeType: "note"},
 		}
 
 		err = repos.Nodes.CreateBatch(tdb.DB, ctx, nodes)
@@ -202,19 +207,40 @@ func TestNodeRepositoryStateless(t *testing.T) {
 		assert.Error(t, err)
 	})
 
+	t.Run("CreateBatch_ValidationFailure", func(t *testing.T) {
+		// Try to create nodes with missing required fields
+		nodes := []models.VaultNode{
+			{ID: "valid-node", Title: "Valid Node", FilePath: "/valid.md", NodeType: "note"},
+			{ID: "missing-title", Title: "", FilePath: "/missing-title.md", NodeType: "note"}, // Missing title
+			{ID: "missing-path", Title: "Missing Path", FilePath: "", NodeType: "note"},      // Missing file path
+		}
+
+		err := repos.Nodes.CreateBatch(tdb.DB, ctx, nodes)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "validation failed")
+
+		// Due to validation happening before the transaction, none should be created
+		_, err = repos.Nodes.GetByID(tdb.DB, ctx, "valid-node")
+		assert.Error(t, err)
+		_, err = repos.Nodes.GetByID(tdb.DB, ctx, "missing-title")
+		assert.Error(t, err)
+		_, err = repos.Nodes.GetByID(tdb.DB, ctx, "missing-path")
+		assert.Error(t, err)
+	})
+
 	t.Run("UpsertBatch", func(t *testing.T) {
 		// Create initial nodes
 		initial := []models.VaultNode{
-			{ID: "upsert-1", Title: "Initial 1", FilePath: "/upsert/1.md", Content: "v1"},
-			{ID: "upsert-2", Title: "Initial 2", FilePath: "/upsert/2.md", Content: "v1"},
+			{ID: "upsert-1", Title: "Initial 1", FilePath: "/upsert/1.md", Content: "v1", NodeType: "note"},
+			{ID: "upsert-2", Title: "Initial 2", FilePath: "/upsert/2.md", Content: "v1", NodeType: "note"},
 		}
 		err := repos.Nodes.CreateBatch(tdb.DB, ctx, initial)
 		require.NoError(t, err)
 
 		// Upsert with updates and new nodes
 		upserted := []models.VaultNode{
-			{ID: "upsert-1", Title: "Updated 1", FilePath: "/upsert/1.md", Content: "v2"}, // Update
-			{ID: "upsert-3", Title: "New 3", FilePath: "/upsert/3.md", Content: "v1"},     // Insert
+			{ID: "upsert-1", Title: "Updated 1", FilePath: "/upsert/1.md", Content: "v2", NodeType: "note"}, // Update
+			{ID: "upsert-3", Title: "New 3", FilePath: "/upsert/3.md", Content: "v1", NodeType: "note"},     // Insert
 		}
 
 		err = repos.Nodes.UpsertBatch(tdb.DB, ctx, upserted)
@@ -240,11 +266,11 @@ func TestNodeRepositoryStateless(t *testing.T) {
 	t.Run("GetAll", func(t *testing.T) {
 		// Clean and create test data
 		require.NoError(t, tdb.CleanTables(ctx))
-		
+
 		nodes := []models.VaultNode{
-			{ID: "all-1", Title: "Node 1", FilePath: "/all/1.md"},
-			{ID: "all-2", Title: "Node 2", FilePath: "/all/2.md"},
-			{ID: "all-3", Title: "Node 3", FilePath: "/all/3.md"},
+			{ID: "all-1", Title: "Node 1", FilePath: "/all/1.md", NodeType: "note"},
+			{ID: "all-2", Title: "Node 2", FilePath: "/all/2.md", NodeType: "note"},
+			{ID: "all-3", Title: "Node 3", FilePath: "/all/3.md", NodeType: "note"},
 		}
 		err := repos.Nodes.CreateBatch(tdb.DB, ctx, nodes)
 		require.NoError(t, err)
@@ -267,9 +293,9 @@ func TestNodeRepositoryStateless(t *testing.T) {
 	t.Run("GetByIDs", func(t *testing.T) {
 		// Create test nodes
 		nodes := []models.VaultNode{
-			{ID: "ids-1", Title: "Node 1", FilePath: "/ids/1.md"},
-			{ID: "ids-2", Title: "Node 2", FilePath: "/ids/2.md"},
-			{ID: "ids-3", Title: "Node 3", FilePath: "/ids/3.md"},
+			{ID: "ids-1", Title: "Node 1", FilePath: "/ids/1.md", NodeType: "note"},
+			{ID: "ids-2", Title: "Node 2", FilePath: "/ids/2.md", NodeType: "note"},
+			{ID: "ids-3", Title: "Node 3", FilePath: "/ids/3.md", NodeType: "note"},
 		}
 		err := repos.Nodes.CreateBatch(tdb.DB, ctx, nodes)
 		require.NoError(t, err)
@@ -278,7 +304,7 @@ func TestNodeRepositoryStateless(t *testing.T) {
 		result, err := repos.Nodes.GetByIDs(tdb.DB, ctx, []string{"ids-1", "ids-3", "non-existent"})
 		assert.NoError(t, err)
 		assert.Len(t, result, 2)
-		
+
 		ids := make([]string, len(result))
 		for i, node := range result {
 			ids[i] = node.ID
@@ -290,12 +316,11 @@ func TestNodeRepositoryStateless(t *testing.T) {
 	t.Run("GetByType", func(t *testing.T) {
 		// Clean and create typed nodes
 		require.NoError(t, tdb.CleanTables(ctx))
-		
+
 		nodes := []models.VaultNode{
 			{ID: "type-1", Title: "Note 1", NodeType: "note", FilePath: "/type/1.md"},
-			{ID: "type-2", Title: "Reference 1", NodeType: "reference", FilePath: "/type/2.md"},
-			{ID: "type-3", Title: "Note 2", NodeType: "note", FilePath: "/type/3.md"},
-			{ID: "type-4", Title: "Task 1", NodeType: "task", FilePath: "/type/4.md"},
+			{ID: "type-2", Title: "Note 2", NodeType: "note", FilePath: "/type/2.md"},
+			{ID: "type-3", Title: "Project 1", NodeType: "project", FilePath: "/type/3.md"},
 		}
 		err := repos.Nodes.CreateBatch(tdb.DB, ctx, nodes)
 		require.NoError(t, err)
@@ -308,10 +333,9 @@ func TestNodeRepositoryStateless(t *testing.T) {
 			assert.Equal(t, "note", node.NodeType)
 		}
 
-		refs, err := repos.Nodes.GetByType(tdb.DB, ctx, "reference")
+		projectNodes, err := repos.Nodes.GetByType(tdb.DB, ctx, "project")
 		assert.NoError(t, err)
-		assert.Len(t, refs, 1)
-		assert.Equal(t, "Reference 1", refs[0].Title)
+		assert.Len(t, projectNodes, 1)
 	})
 
 	t.Run("GetByPath", func(t *testing.T) {
@@ -319,6 +343,7 @@ func TestNodeRepositoryStateless(t *testing.T) {
 			ID:       "path-test",
 			Title:    "Path Test",
 			FilePath: "/unique/path/to/file.md",
+			NodeType: "note",
 		}
 		err := repos.Nodes.Create(tdb.DB, ctx, node)
 		require.NoError(t, err)
@@ -337,25 +362,28 @@ func TestNodeRepositoryStateless(t *testing.T) {
 	t.Run("Search", func(t *testing.T) {
 		// Clean and create searchable nodes
 		require.NoError(t, tdb.CleanTables(ctx))
-		
+
 		nodes := []models.VaultNode{
 			{
 				ID:       "search-1",
 				Title:    "PostgreSQL Tutorial",
 				Content:  "Learn about PostgreSQL database features",
 				FilePath: "/search/1.md",
+				NodeType: "note",
 			},
 			{
 				ID:       "search-2",
 				Title:    "MySQL Guide",
 				Content:  "MySQL is another database system",
 				FilePath: "/search/2.md",
+				NodeType: "note",
 			},
 			{
 				ID:       "search-3",
 				Title:    "Database Design",
 				Content:  "Best practices for designing databases with PostgreSQL",
 				FilePath: "/search/3.md",
+				NodeType: "note",
 			},
 		}
 		err := repos.Nodes.CreateBatch(tdb.DB, ctx, nodes)
@@ -380,11 +408,11 @@ func TestNodeRepositoryStateless(t *testing.T) {
 	t.Run("Count", func(t *testing.T) {
 		// Clean and add known number of nodes
 		require.NoError(t, tdb.CleanTables(ctx))
-		
+
 		nodes := []models.VaultNode{
-			{ID: "count-1", Title: "Node 1", FilePath: "/count/1.md"},
-			{ID: "count-2", Title: "Node 2", FilePath: "/count/2.md"},
-			{ID: "count-3", Title: "Node 3", FilePath: "/count/3.md"},
+			{ID: "count-1", Title: "Node 1", FilePath: "/count/1.md", NodeType: "note"},
+			{ID: "count-2", Title: "Node 2", FilePath: "/count/2.md", NodeType: "note"},
+			{ID: "count-3", Title: "Node 3", FilePath: "/count/3.md", NodeType: "note"},
 		}
 		err := repos.Nodes.CreateBatch(tdb.DB, ctx, nodes)
 		require.NoError(t, err)
@@ -397,8 +425,8 @@ func TestNodeRepositoryStateless(t *testing.T) {
 	t.Run("DeleteAll", func(t *testing.T) {
 		// Create some nodes
 		nodes := []models.VaultNode{
-			{ID: "delete-all-1", Title: "Node 1", FilePath: "/del/1.md"},
-			{ID: "delete-all-2", Title: "Node 2", FilePath: "/del/2.md"},
+			{ID: "delete-all-1", Title: "Node 1", FilePath: "/del/1.md", NodeType: "note"},
+			{ID: "delete-all-2", Title: "Node 2", FilePath: "/del/2.md", NodeType: "note"},
 		}
 		err := repos.Nodes.CreateBatch(tdb.DB, ctx, nodes)
 		require.NoError(t, err)
@@ -425,8 +453,9 @@ func TestNodeRepositoryStateless(t *testing.T) {
 				ID:       "tx-node",
 				Title:    "Transaction Node",
 				FilePath: "/tx/node.md",
+				NodeType: "note",
 			}
-			
+
 			// Create using transaction
 			if err := repos.Nodes.Create(tx, ctx, node); err != nil {
 				return err
@@ -459,8 +488,9 @@ func TestNodeRepositoryStateless(t *testing.T) {
 				ID:       "rollback-node",
 				Title:    "Should be rolled back",
 				FilePath: "/rollback/node.md",
+				NodeType: "note",
 			}
-			
+
 			// Create in transaction
 			if err := repos.Nodes.Create(tx, ctx, node); err != nil {
 				return err

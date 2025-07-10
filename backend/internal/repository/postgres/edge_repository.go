@@ -96,20 +96,12 @@ func (r *EdgeRepository) Update(exec repository.Executor, ctx context.Context, e
 func (r *EdgeRepository) Delete(exec repository.Executor, ctx context.Context, id string) error {
 	query := `DELETE FROM edges WHERE id = $1`
 
-	result, err := exec.ExecContext(ctx, query, id)
+	_, err := exec.ExecContext(ctx, query, id)
 	if err != nil {
 		return handlePostgresError(err, "edge")
 	}
 
-	rows, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("failed to get affected rows: %w", err)
-	}
-
-	if rows == 0 {
-		return &NotFoundError{Resource: "edge", ID: id}
-	}
-
+	// Delete is idempotent - don't return error if edge doesn't exist
 	return nil
 }
 
@@ -143,7 +135,7 @@ func (r *EdgeRepository) createBatchWithCopy(ctx context.Context, tx *sqlx.Tx, e
 	stmt, err := tx.PrepareContext(ctx, pq.CopyIn("edges",
 		"id", "source_id", "target_id", "edge_type", "display_text", "weight", "created_at"))
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to prepare batch insert: %w", err)
 	}
 	defer stmt.Close()
 
@@ -162,7 +154,10 @@ func (r *EdgeRepository) createBatchWithCopy(ctx context.Context, tx *sqlx.Tx, e
 	}
 
 	_, err = stmt.Exec()
-	return err
+	if err != nil {
+		return fmt.Errorf("failed to execute batch insert: %w", err)
+	}
+	return nil
 }
 
 // createBatchIndividual inserts edges one by one (fallback)

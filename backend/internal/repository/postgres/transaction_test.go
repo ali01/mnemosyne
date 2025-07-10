@@ -54,7 +54,6 @@ func TestTransactionManager(t *testing.T) {
 
 			// Create edge
 			edge := &models.VaultEdge{
-				ID:       "tx-commit-edge-1",
 				SourceID: node1.ID,
 				TargetID: node2.ID,
 				EdgeType: "wikilink",
@@ -69,10 +68,11 @@ func TestTransactionManager(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, "Transaction Node 1", node.Title)
 
-		edge, err := repos.Edges.GetByID(tdb.DB, ctx, "tx-commit-edge-1")
+		edges, err := repos.Edges.GetBySourceAndTarget(tdb.DB, ctx, "tx-commit-node-1", "tx-commit-node-2")
 		require.NoError(t, err)
-		assert.Equal(t, "tx-commit-node-1", edge.SourceID)
-		assert.Equal(t, "tx-commit-node-2", edge.TargetID)
+		assert.Len(t, edges, 1)
+		assert.Equal(t, "tx-commit-node-1", edges[0].SourceID)
+		assert.Equal(t, "tx-commit-node-2", edges[0].TargetID)
 	})
 
 	t.Run("RollbackTransaction", func(t *testing.T) {
@@ -114,9 +114,9 @@ func TestTransactionManager(t *testing.T) {
 
 			// Create multiple nodes
 			nodes := []models.VaultNode{
-				{ID: "nested-1", Title: "Nested 1", FilePath: "/nested/1.md"},
-				{ID: "nested-2", Title: "Nested 2", FilePath: "/nested/2.md"},
-				{ID: "nested-3", Title: "Nested 3", FilePath: "/nested/3.md"},
+				{ID: "nested-1", Title: "Nested 1", FilePath: "/nested/1.md", NodeType: "note"},
+				{ID: "nested-2", Title: "Nested 2", FilePath: "/nested/2.md", NodeType: "note"},
+				{ID: "nested-3", Title: "Nested 3", FilePath: "/nested/3.md", NodeType: "note"},
 			}
 
 			if err := repos.Nodes.CreateBatch(exec, ctx, nodes); err != nil {
@@ -126,8 +126,8 @@ func TestTransactionManager(t *testing.T) {
 
 			// Create edges between them
 			edges := []models.VaultEdge{
-				{ID: "nested-edge-1", SourceID: "nested-1", TargetID: "nested-2", EdgeType: "wikilink"},
-				{ID: "nested-edge-2", SourceID: "nested-2", TargetID: "nested-3", EdgeType: "wikilink"},
+				{SourceID: "nested-1", TargetID: "nested-2", EdgeType: "wikilink"},
+				{SourceID: "nested-2", TargetID: "nested-3", EdgeType: "wikilink"},
 			}
 
 			if err := repos.Edges.CreateBatch(exec, ctx, edges); err != nil {
@@ -326,10 +326,9 @@ func TestTransactionManager(t *testing.T) {
 			edges := make([]models.VaultEdge, batchSize-1)
 			for i := 0; i < batchSize-1; i++ {
 				edges[i] = models.VaultEdge{
-					ID:       fmt.Sprintf("batch-edge-%d", i),
 					SourceID: fmt.Sprintf("batch-tx-%d", i),
 					TargetID: fmt.Sprintf("batch-tx-%d", i+1),
-					EdgeType: "sequence",
+					EdgeType: "wikilink",
 				}
 			}
 

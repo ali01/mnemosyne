@@ -3,6 +3,7 @@ package postgres
 
 import (
 	"database/sql"
+	"fmt"
 
 	"github.com/lib/pq"
 )
@@ -41,7 +42,8 @@ func handlePostgresError(err error, resource string) error {
 		}
 	}
 
-	return err
+	// Wrap unhandled errors with context
+	return fmt.Errorf("database operation failed for %s: %w", resource, err)
 }
 
 // IsNotFound checks if an error is a NotFoundError
@@ -52,4 +54,3 @@ func IsNotFound(err error) bool {
 	_, ok := err.(*NotFoundError)
 	return ok
 }
-

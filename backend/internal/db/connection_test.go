@@ -1,11 +1,15 @@
 package db_test
 
 import (
+	"context"
 	"testing"
 
+	"github.com/jmoiron/sqlx"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/ali01/mnemosyne/internal/db"
+	"github.com/ali01/mnemosyne/internal/repository/postgres"
 )
 
 func TestConnect_InvalidConfig(t *testing.T) {
@@ -65,33 +69,53 @@ func TestConnect_InvalidConfig(t *testing.T) {
 }
 
 func TestExecuteSchema_InvalidSQL(t *testing.T) {
-	// This test would require a real database connection
-	// Skip for now as it needs a test database
-	t.Skip("Requires test database")
+	if testing.Short() {
+		t.Skip("Skipping integration test")
+	}
+
+	// Setup test database
+	tdb := postgres.CreateTestDB(t)
+	defer tdb.Close()
+
+	// Try to execute invalid SQL
+	invalidSQL := "INVALID SQL STATEMENT;"
+	_, err := tdb.Exec(invalidSQL)
+	assert.Error(t, err)
 }
 
 func TestWithTransaction_NilDB(t *testing.T) {
-	// This test would require a real database connection
-	// Skip for now as it needs a test database
-	t.Skip("Requires test database")
+	ctx := context.Background()
+	err := db.WithTransaction(nil, ctx, func(tx *sqlx.Tx) error {
+		return nil
+	})
+	assert.Error(t, err)
 }
 
 func TestWithTransaction_NilFunc(t *testing.T) {
-	// This test would require a valid database connection
-	// Skip for now as it needs a test database
-	t.Skip("Requires test database")
+	if testing.Short() {
+		t.Skip("Skipping integration test")
+	}
+
+	// Setup test database
+	tdb := postgres.CreateTestDB(t)
+	defer tdb.Close()
+
+	ctx := context.Background()
+	err := db.WithTransaction(tdb.DB, ctx, nil)
+	assert.Error(t, err)
 }
 
 // TestSchemaContent verifies that the schema can be loaded
 func TestSchemaContent(t *testing.T) {
-	// This test just ensures the schema file exists and can be read
-	// The actual schema execution would require a test database
-	t.Run("schema file exists", func(t *testing.T) {
-		// The ExecuteSchema function will panic if the schema file doesn't exist
-		// We can't test the actual execution without a database
-		assert.NotPanics(t, func() {
-			// Just accessing the embedded schema to ensure it exists
-			_ = db.ExecuteSchema
-		})
+	t.Run("embedded schema is accessible", func(t *testing.T) {
+		// Verify the embedded schema is accessible and not empty
+		require.NotEmpty(t, db.SchemaSQL)
+
+		// Verify it contains expected SQL structures
+		assert.Contains(t, db.SchemaSQL, "CREATE TABLE")
+		assert.Contains(t, db.SchemaSQL, "nodes")
+		assert.Contains(t, db.SchemaSQL, "edges")
+		assert.Contains(t, db.SchemaSQL, "node_positions")
+		assert.Contains(t, db.SchemaSQL, "vault_metadata")
 	})
 }

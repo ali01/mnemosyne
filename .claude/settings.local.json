@@ -18,7 +18,7 @@
       "Bash(go build:*)",
       "Bash(rm:*)",
       "Bash(./scripts/test-all.sh:*)",
-      "Bash(mv:*)"
+      "Bash(mv:*)",
       "Bash(gh pr diff:*)",
       "Bash(gh pr view:*)",
       "Bash(diff:*)",

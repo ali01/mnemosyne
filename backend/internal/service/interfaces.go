@@ -16,6 +16,7 @@ type NodeServiceInterface interface {
 	GetNode(ctx context.Context, id string) (*models.VaultNode, error)
 	GetNodeByPath(ctx context.Context, path string) (*models.VaultNode, error)
 	CreateNode(ctx context.Context, node *models.VaultNode) error
+	CreateNodeBatch(ctx context.Context, nodes []models.VaultNode) error
 	UpdateNode(ctx context.Context, node *models.VaultNode) error
 	DeleteNode(ctx context.Context, id string) error
 	GetAllNodes(ctx context.Context, limit, offset int) ([]models.VaultNode, error)
@@ -30,6 +31,7 @@ type NodeServiceInterface interface {
 // ensures referential integrity and handles edge-related business logic.
 type EdgeServiceInterface interface {
 	CreateEdge(ctx context.Context, edge *models.VaultEdge) error
+	CreateEdgeBatch(ctx context.Context, edges []models.VaultEdge) error
 	GetEdge(ctx context.Context, id string) (*models.VaultEdge, error)
 	UpdateEdge(ctx context.Context, edge *models.VaultEdge) error
 	DeleteEdge(ctx context.Context, id string) error
@@ -49,4 +51,27 @@ type PositionServiceInterface interface {
 	GetAllPositions(ctx context.Context) ([]models.NodePosition, error)
 	GetViewportPositions(ctx context.Context, minX, maxX, minY, maxY float64) ([]models.NodePosition, error)
 	DeleteNodePosition(ctx context.Context, nodeID string) error
+}
+
+// MetadataServiceInterface defines the interface for metadata operations.
+// It manages vault metadata and parse history, providing access to
+// configuration settings and tracking the state of vault parsing operations.
+type MetadataServiceInterface interface {
+	GetMetadata(ctx context.Context, key string) (*models.VaultMetadata, error)
+	SetMetadata(ctx context.Context, key, value string) error
+	GetAllMetadata(ctx context.Context) ([]models.VaultMetadata, error)
+}
+
+// VaultServiceInterface defines the interface for vault operations.
+// It orchestrates the parsing pipeline, connecting Git integration,
+// vault parser, and graph builder with the database layer. The service
+// manages the complete lifecycle of vault synchronization and indexing.
+type VaultServiceInterface interface {
+	// Core parsing operations
+	ParseAndIndexVault(ctx context.Context) (*models.ParseHistory, error)
+	GetParseStatus(ctx context.Context) (*models.ParseStatusResponse, error)
+	GetLatestParseHistory(ctx context.Context) (*models.ParseHistory, error)
+
+	// Vault information
+	GetVaultMetadata(ctx context.Context) (*models.VaultMetadata, error)
 }

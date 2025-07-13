@@ -29,8 +29,20 @@ func NewEdgeRepository() repository.EdgeRepository {
 
 // Create inserts a new edge into the database
 func (r *EdgeRepository) Create(exec repository.Executor, ctx context.Context, edge *models.VaultEdge) error {
+	// Validate edge before creating (skip ID validation if it will be generated)
 	if edge.ID == "" {
+		// Temporarily set ID for validation
+		edge.ID = "temp-for-validation"
+		err := edge.Validate()
+		edge.ID = "" // Reset to empty
+		if err != nil {
+			return fmt.Errorf("edge validation failed: %w", err)
+		}
 		edge.ID = uuid.New().String()
+	} else {
+		if err := edge.Validate(); err != nil {
+			return fmt.Errorf("edge validation failed: %w", err)
+		}
 	}
 
 	edge.CreatedAt = time.Now()
@@ -132,6 +144,24 @@ func (r *EdgeRepository) CreateBatch(exec repository.Executor, ctx context.Conte
 
 // createBatchWithCopy uses PostgreSQL COPY for efficient batch insert
 func (r *EdgeRepository) createBatchWithCopy(ctx context.Context, tx *sqlx.Tx, edges []models.VaultEdge) error {
+	// Validate all edges before starting the batch operation
+	for i, edge := range edges {
+		// Skip ID validation if it will be generated
+		if edge.ID == "" {
+			// Temporarily set ID for validation
+			edge.ID = "temp-for-validation"
+			err := edge.Validate()
+			edge.ID = "" // Reset to empty
+			if err != nil {
+				return fmt.Errorf("validation failed for edge at index %d: %w", i, err)
+			}
+		} else {
+			if err := edge.Validate(); err != nil {
+				return fmt.Errorf("validation failed for edge at index %d: %w", i, err)
+			}
+		}
+	}
+
 	stmt, err := tx.PrepareContext(ctx, pq.CopyIn("edges",
 		"id", "source_id", "target_id", "edge_type", "display_text", "weight", "created_at"))
 	if err != nil {

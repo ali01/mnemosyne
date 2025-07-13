@@ -283,7 +283,7 @@ func TestEdgeService_BatchOperations(t *testing.T) {
 
 		svc := service.NewEdgeServiceWithRepo(&sqlx.DB{}, mockRepo)
 
-		err := svc.CreateEdgeBatch(ctx, testEdges)
+		err := svc.CreateEdgeBatchTx(&sqlx.DB{}, ctx, testEdges)
 		assert.NoError(t, err)
 	})
 
@@ -296,7 +296,7 @@ func TestEdgeService_BatchOperations(t *testing.T) {
 
 		svc := service.NewEdgeServiceWithRepo(&sqlx.DB{}, mockRepo)
 
-		err := svc.CreateEdgeBatch(ctx, testEdges)
+		err := svc.CreateEdgeBatchTx(&sqlx.DB{}, ctx, testEdges)
 		assert.Error(t, err)
 	})
 }

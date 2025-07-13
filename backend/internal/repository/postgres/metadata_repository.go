@@ -134,20 +134,20 @@ func (r *MetadataRepository) GetParseHistory(exec repository.Executor, ctx conte
 	return records, nil
 }
 
-// UpdateParseStatus updates the status of a parse record
-func (r *MetadataRepository) UpdateParseStatus(exec repository.Executor, ctx context.Context, id string, status models.ParseStatus) error {
+// UpdateParseStatus updates the status of a parse record, optionally with error message
+func (r *MetadataRepository) UpdateParseStatus(exec repository.Executor, ctx context.Context, id string, status models.ParseStatus, errorMsg *string) error {
 	var query string
 	var args []interface{}
 
 	switch status {
 	case models.ParseStatusCompleted, models.ParseStatusFailed:
-		// Set completed_at when finishing
-		query = `UPDATE parse_history SET status = $1, completed_at = $2 WHERE id = $3`
-		args = []interface{}{status, time.Now(), id}
+		// Set completed_at and error when finishing
+		query = `UPDATE parse_history SET status = $1, completed_at = $2, error = $3 WHERE id = $4`
+		args = []interface{}{status, time.Now(), errorMsg, id}
 	default:
-		// Just update status
-		query = `UPDATE parse_history SET status = $1 WHERE id = $2`
-		args = []interface{}{status, id}
+		// Just update status and error
+		query = `UPDATE parse_history SET status = $1, error = $2 WHERE id = $3`
+		args = []interface{}{status, errorMsg, id}
 	}
 
 	result, err := exec.ExecContext(ctx, query, args...)

@@ -103,7 +103,7 @@ func TestPositionRepositoryStateless(t *testing.T) {
 	})
 
 	t.Run("Upsert_NonExistentNode", func(t *testing.T) {
-		// Try to create position for non-existent node
+		// Create position for non-existent node (now allowed without FK constraint)
 		position := &models.NodePosition{
 			NodeID:    "non-existent-node",
 			X:         100,
@@ -112,8 +112,14 @@ func TestPositionRepositoryStateless(t *testing.T) {
 		}
 
 		err := repos.Positions.Upsert(tdb.DB, ctx, position)
-		assert.Error(t, err)
-		// Should fail due to foreign key constraint
+		assert.NoError(t, err)
+		// Should succeed now that FK constraint is removed to allow positions to persist
+
+		// Verify it was created
+		retrieved, err := repos.Positions.GetByNodeID(tdb.DB, ctx, "non-existent-node")
+		require.NoError(t, err)
+		assert.Equal(t, position.X, retrieved.X)
+		assert.Equal(t, position.Y, retrieved.Y)
 	})
 
 	t.Run("GetByNodeID_NotFound", func(t *testing.T) {
@@ -196,7 +202,7 @@ func TestPositionRepositoryStateless(t *testing.T) {
 		assert.Equal(t, float64(333), pos2.X)
 	})
 
-	t.Run("UpsertBatch_PartialFailure", func(t *testing.T) {
+	t.Run("UpsertBatch_AllSucceed", func(t *testing.T) {
 		// First create a position with known values
 		initialPos := &models.NodePosition{
 			NodeID:    "pos-node-1",
@@ -207,7 +213,7 @@ func TestPositionRepositoryStateless(t *testing.T) {
 		err := repos.Positions.Upsert(tdb.DB, ctx, initialPos)
 		require.NoError(t, err)
 
-		// Try to update with a batch that includes an invalid node
+		// Update with a batch that includes non-existent nodes (now allowed)
 		positions := []models.NodePosition{
 			{
 				NodeID:    "pos-node-1",
@@ -216,7 +222,7 @@ func TestPositionRepositoryStateless(t *testing.T) {
 				UpdatedAt: time.Now(),
 			},
 			{
-				NodeID:    "invalid-node", // This will fail
+				NodeID:    "orphan-node", // No corresponding node, but allowed now
 				X:         900,
 				Y:         1000,
 				UpdatedAt: time.Now(),
@@ -224,14 +230,18 @@ func TestPositionRepositoryStateless(t *testing.T) {
 		}
 
 		err = repos.Positions.UpsertBatch(tdb.DB, ctx, positions)
-		assert.Error(t, err)
+		assert.NoError(t, err)
 
-		// In a transaction, nothing should be updated
+		// Both positions should be updated/created
 		pos1, err := repos.Positions.GetByNodeID(tdb.DB, ctx, "pos-node-1")
 		require.NoError(t, err)
-		// Position should still have original values due to transaction rollback
-		assert.Equal(t, float64(100), pos1.X)
-		assert.Equal(t, float64(200), pos1.Y)
+		assert.Equal(t, float64(700), pos1.X)
+		assert.Equal(t, float64(800), pos1.Y)
+
+		pos2, err := repos.Positions.GetByNodeID(tdb.DB, ctx, "orphan-node")
+		require.NoError(t, err)
+		assert.Equal(t, float64(900), pos2.X)
+		assert.Equal(t, float64(1000), pos2.Y)
 	})
 
 	t.Run("GetAll", func(t *testing.T) {
@@ -297,18 +307,18 @@ func TestPositionRepositoryStateless(t *testing.T) {
 		assert.NoError(t, err)
 	})
 
-	t.Run("CascadeDelete", func(t *testing.T) {
+	t.Run("PositionsPersistAfterNodeDelete", func(t *testing.T) {
 		// Create node with position
 		node := &models.VaultNode{
-			ID:       "cascade-node",
-			Title:    "Cascade Test",
-			FilePath: "/cascade/test.md",
+			ID:       "persist-node",
+			Title:    "Persist Test",
+			FilePath: "/persist/test.md",
 		}
 		err := repos.Nodes.Create(tdb.DB, ctx, node)
 		require.NoError(t, err)
 
 		position := &models.NodePosition{
-			NodeID:    "cascade-node",
+			NodeID:    "persist-node",
 			X:         100,
 			Y:         200,
 			UpdatedAt: time.Now(),
@@ -317,13 +327,14 @@ func TestPositionRepositoryStateless(t *testing.T) {
 		require.NoError(t, err)
 
 		// Delete the node
-		err = repos.Nodes.Delete(tdb.DB, ctx, "cascade-node")
+		err = repos.Nodes.Delete(tdb.DB, ctx, "persist-node")
 		require.NoError(t, err)
 
-		// Position should be gone too (CASCADE)
-		_, err = repos.Positions.GetByNodeID(tdb.DB, ctx, "cascade-node")
-		assert.Error(t, err)
-		assert.True(t, repository.IsNotFound(err))
+		// Position should STILL EXIST (no CASCADE)
+		retrieved, err := repos.Positions.GetByNodeID(tdb.DB, ctx, "persist-node")
+		assert.NoError(t, err)
+		assert.Equal(t, float64(100), retrieved.X)
+		assert.Equal(t, float64(200), retrieved.Y)
 	})
 
 	t.Run("WithTransaction", func(t *testing.T) {

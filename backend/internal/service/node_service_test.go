@@ -14,6 +14,7 @@ import (
 
 	"github.com/ali01/mnemosyne/internal/models"
 	"github.com/ali01/mnemosyne/internal/repository"
+	"github.com/ali01/mnemosyne/internal/repository/postgres"
 	"github.com/ali01/mnemosyne/internal/service"
 )
 
@@ -129,7 +130,7 @@ func (m *mockNodeRepository) DeleteAll(exec repository.Executor, ctx context.Con
 // TestNodeService_GetNode tests the GetNode method
 func TestNodeService_GetNode(t *testing.T) {
 	ctx := context.Background()
-	
+
 	testNode := &models.VaultNode{
 		ID:       "test-123",
 		Title:    "Test Node",
@@ -137,7 +138,7 @@ func TestNodeService_GetNode(t *testing.T) {
 		NodeType: "note",
 		Content:  "Test content",
 	}
-	
+
 	tests := []struct {
 		name     string
 		nodeID   string
@@ -173,20 +174,20 @@ func TestNodeService_GetNode(t *testing.T) {
 			wantErr:  true,
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create mock repository
 			mockRepo := &mockNodeRepository{
 				getByIDFunc: tt.mockFunc,
 			}
-			
+
 			// Create service with mock
 			svc := service.NewNodeServiceWithRepo(&sqlx.DB{}, mockRepo)
-			
+
 			// Test GetNode
 			node, err := svc.GetNode(ctx, tt.nodeID)
-			
+
 			if tt.wantErr {
 				assert.Error(t, err)
 			} else {
@@ -200,7 +201,7 @@ func TestNodeService_GetNode(t *testing.T) {
 // TestNodeService_CreateNode tests the CreateNode method
 func TestNodeService_CreateNode(t *testing.T) {
 	ctx := context.Background()
-	
+
 	testNode := &models.VaultNode{
 		ID:       "new-node",
 		Title:    "New Node",
@@ -208,7 +209,7 @@ func TestNodeService_CreateNode(t *testing.T) {
 		NodeType: "note",
 		Content:  "New content",
 	}
-	
+
 	tests := []struct {
 		name     string
 		node     *models.VaultNode
@@ -242,20 +243,20 @@ func TestNodeService_CreateNode(t *testing.T) {
 			wantErr: true,
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create mock repository
 			mockRepo := &mockNodeRepository{
 				createFunc: tt.mockFunc,
 			}
-			
+
 			// Create service with mock
 			svc := service.NewNodeServiceWithRepo(&sqlx.DB{}, mockRepo)
-			
+
 			// Test CreateNode
 			err := svc.CreateNode(ctx, tt.node)
-			
+
 			if tt.wantErr {
 				assert.Error(t, err)
 			} else {
@@ -268,12 +269,12 @@ func TestNodeService_CreateNode(t *testing.T) {
 // TestNodeService_SearchNodes tests the SearchNodes method
 func TestNodeService_SearchNodes(t *testing.T) {
 	ctx := context.Background()
-	
+
 	searchResults := []models.VaultNode{
 		{ID: "1", Title: "Search Result 1", Content: "Contains search term"},
 		{ID: "2", Title: "Search Result 2", Content: "Also contains search term"},
 	}
-	
+
 	tests := []struct {
 		name        string
 		query       string
@@ -309,20 +310,20 @@ func TestNodeService_SearchNodes(t *testing.T) {
 			wantErr:     true,
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create mock repository
 			mockRepo := &mockNodeRepository{
 				searchFunc: tt.mockFunc,
 			}
-			
+
 			// Create service with mock
 			svc := service.NewNodeServiceWithRepo(&sqlx.DB{}, mockRepo)
-			
+
 			// Test SearchNodes
 			results, err := svc.SearchNodes(ctx, tt.query)
-			
+
 			if tt.wantErr {
 				assert.Error(t, err)
 			} else {
@@ -335,34 +336,303 @@ func TestNodeService_SearchNodes(t *testing.T) {
 
 // TestNodeService_UpdateNodeAndEdges tests the UpdateNodeAndEdges method with transactions
 func TestNodeService_UpdateNodeAndEdges(t *testing.T) {
+	// Skip if running in short mode
+	if testing.Short() {
+		t.Skip("Skipping integration test")
+	}
+
+	// Use test containers for real database
+	tdb, _ := postgres.CreateTestRepositories(t)
+	defer tdb.Close()
+
+	ctx := context.Background()
+
+	// Create services with real database
+	nodeService := service.NewNodeService(tdb.DB)
+	edgeService := service.NewEdgeService(tdb.DB)
+
 	t.Run("successful update", func(t *testing.T) {
-		// This test would require a test database to properly test transactions
-		// For now, we'll skip the actual transaction testing
-		t.Skip("Transaction testing requires test database")
+		// Clean tables before test
+		require.NoError(t, tdb.CleanTables(ctx))
+
+		// Create initial node
+		node := models.VaultNode{
+			ID:       "node1",
+			Title:    "Original Title",
+			FilePath: "/test/node1.md",
+			NodeType: "note",
+			Content:  "Original content",
+		}
+		err := nodeService.CreateNode(ctx, &node)
+		require.NoError(t, err)
+
+		// Create target node for edge
+		targetNode := models.VaultNode{
+			ID:       "node2",
+			Title:    "Target Node",
+			FilePath: "/test/node2.md",
+			NodeType: "note",
+		}
+		err = nodeService.CreateNode(ctx, &targetNode)
+		require.NoError(t, err)
+
+		// Update node
+		node.Title = "Updated Title"
+		node.Content = "Updated content"
+
+		// Create edges for the update
+		edges := []models.VaultEdge{
+			{
+				ID:       "123e4567-e89b-12d3-a456-426614174000", // Valid UUID
+				SourceID: "node1",
+				TargetID: "node2",
+				EdgeType: "wikilink",
+			},
+		}
+
+		// Perform update
+		err = nodeService.UpdateNodeAndEdges(ctx, &node, edges)
+		require.NoError(t, err)
+
+		// Verify node was updated
+		updatedNode, err := nodeService.GetNode(ctx, "node1")
+		require.NoError(t, err)
+		assert.Equal(t, "Updated Title", updatedNode.Title)
+		assert.Equal(t, "Updated content", updatedNode.Content)
+
+		// Verify edges were created
+		edgeList, err := edgeService.GetEdgesByNode(ctx, "node1")
+		require.NoError(t, err)
+		assert.Len(t, edgeList, 1)
+		assert.Equal(t, "node2", edgeList[0].TargetID)
+	})
+
+	t.Run("transaction rollback on error", func(t *testing.T) {
+		// Clean tables
+		require.NoError(t, tdb.CleanTables(ctx))
+
+		// Create initial node
+		node := models.VaultNode{
+			ID:       "node1",
+			Title:    "Original Title",
+			FilePath: "/test/node1.md",
+			NodeType: "note",
+		}
+		err := nodeService.CreateNode(ctx, &node)
+		require.NoError(t, err)
+
+		// Update node
+		node.Title = "Updated Title"
+
+		// Invalid edge - references non-existent node
+		invalidEdges := []models.VaultEdge{
+			{
+				ID:       "223e4567-e89b-12d3-a456-426614174000", // Valid UUID
+				SourceID: "node1",
+				TargetID: "non-existent",
+				EdgeType: "wikilink",
+			},
+		}
+
+		// This should fail due to foreign key constraint
+		err = nodeService.UpdateNodeAndEdges(ctx, &node, invalidEdges)
+		assert.Error(t, err)
+
+		// Verify node was NOT updated (transaction rolled back)
+		originalNode, err := nodeService.GetNode(ctx, "node1")
+		require.NoError(t, err)
+		assert.Equal(t, "Original Title", originalNode.Title) // Original title preserved
 	})
 }
 
 // TestNodeService_RebuildNodeGraph tests the RebuildNodeGraph method
 func TestNodeService_RebuildNodeGraph(t *testing.T) {
+	// Skip if running in short mode
+	if testing.Short() {
+		t.Skip("Skipping integration test")
+	}
+
+	// Use test containers for real database
+	tdb, _ := postgres.CreateTestRepositories(t)
+	defer tdb.Close()
+
+	ctx := context.Background()
+
+	// Create services with real database
+	nodeService := service.NewNodeService(tdb.DB)
+	edgeService := service.NewEdgeService(tdb.DB)
+
 	t.Run("successful rebuild", func(t *testing.T) {
-		// This test would require a test database to properly test transactions
-		t.Skip("Transaction testing requires test database")
+		// Clean tables before test
+		require.NoError(t, tdb.CleanTables(ctx))
+
+		// Create initial data that will be deleted
+		initialNodes := []models.VaultNode{
+			{
+				ID:       "old1",
+				Title:    "Old Node 1",
+				FilePath: "/old/node1.md",
+				NodeType: "note",
+			},
+			{
+				ID:       "old2",
+				Title:    "Old Node 2",
+				FilePath: "/old/node2.md",
+				NodeType: "note",
+			},
+		}
+
+		for _, node := range initialNodes {
+			err := nodeService.CreateNode(ctx, &node)
+			require.NoError(t, err)
+		}
+
+		// Create old edge
+		oldEdge := models.VaultEdge{
+			ID:       "323e4567-e89b-12d3-a456-426614174000", // Valid UUID
+			SourceID: "old1",
+			TargetID: "old2",
+			EdgeType: "wikilink",
+		}
+		err := edgeService.CreateEdge(ctx, &oldEdge)
+		require.NoError(t, err)
+
+		// Verify initial state
+		initialCount, err := nodeService.CountNodes(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, int64(2), initialCount)
+
+		// Prepare new graph data (note: RebuildNodeGraph only takes nodes, not edges)
+		newNodes := []models.VaultNode{
+			{
+				ID:       "new1",
+				Title:    "New Node 1",
+				FilePath: "/new/node1.md",
+				NodeType: "note",
+			},
+			{
+				ID:       "new2",
+				Title:    "New Node 2",
+				FilePath: "/new/node2.md",
+				NodeType: "note",
+			},
+			{
+				ID:       "new3",
+				Title:    "New Node 3",
+				FilePath: "/new/node3.md",
+				NodeType: "note",
+			},
+		}
+
+		// Rebuild the graph (only nodes, edges are cascade deleted)
+		err = nodeService.RebuildNodeGraph(ctx, newNodes)
+		require.NoError(t, err)
+
+		// Verify old nodes are gone
+		_, err = nodeService.GetNode(ctx, "old1")
+		assert.Error(t, err)
+		_, err = nodeService.GetNode(ctx, "old2")
+		assert.Error(t, err)
+
+		// Verify new nodes exist
+		node1, err := nodeService.GetNode(ctx, "new1")
+		require.NoError(t, err)
+		assert.Equal(t, "New Node 1", node1.Title)
+
+		node2, err := nodeService.GetNode(ctx, "new2")
+		require.NoError(t, err)
+		assert.Equal(t, "New Node 2", node2.Title)
+
+		node3, err := nodeService.GetNode(ctx, "new3")
+		require.NoError(t, err)
+		assert.Equal(t, "New Node 3", node3.Title)
+
+		// Verify edges were cascade deleted
+		edges, err := edgeService.GetAllEdges(ctx, 100, 0)
+		require.NoError(t, err)
+		assert.Len(t, edges, 0) // All edges deleted with nodes
+
+		// Verify node count
+		count, err := nodeService.CountNodes(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, int64(3), count)
+	})
+
+	t.Run("transaction rollback on error", func(t *testing.T) {
+		// Clean tables
+		require.NoError(t, tdb.CleanTables(ctx))
+
+		// Create initial nodes
+		initialNodes := []models.VaultNode{
+			{
+				ID:       "existing1",
+				Title:    "Existing Node",
+				FilePath: "/existing/node1.md",
+				NodeType: "note",
+			},
+			{
+				ID:       "existing2",
+				Title:    "Existing Node 2",
+				FilePath: "/existing/node2.md",
+				NodeType: "note",
+			},
+		}
+
+		for _, node := range initialNodes {
+			err := nodeService.CreateNode(ctx, &node)
+			require.NoError(t, err)
+		}
+
+		// Count initial nodes
+		initialCount, err := nodeService.CountNodes(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, int64(2), initialCount)
+
+		// Prepare new graph with a node that will cause constraint violation
+		newNodes := []models.VaultNode{
+			{
+				ID:       "new1",
+				Title:    "New Node",
+				FilePath: "/new/node1.md",
+				NodeType: "note",
+			},
+			{
+				ID:       "new2",
+				Title:    "Another Node",
+				FilePath: "/new/node2.md",
+				NodeType: "invalid-type", // This will cause check constraint violation
+			},
+		}
+
+		// This should fail due to check constraint
+		err = nodeService.RebuildNodeGraph(ctx, newNodes)
+		assert.Error(t, err)
+
+		// Verify original data is still there (transaction rolled back)
+		node, err := nodeService.GetNode(ctx, "existing1")
+		require.NoError(t, err)
+		assert.Equal(t, "Existing Node", node.Title)
+
+		node2, err := nodeService.GetNode(ctx, "existing2")
+		require.NoError(t, err)
+		assert.Equal(t, "Existing Node 2", node2.Title)
+
+		// Verify new nodes were NOT created
+		_, err = nodeService.GetNode(ctx, "new1")
+		assert.Error(t, err)
+
+		// Verify count is unchanged
+		finalCount, err := nodeService.CountNodes(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, initialCount, finalCount)
 	})
 }
 
-// TestNodeService_GetNodeWithEdges tests the GetNodeWithEdges method
-func TestNodeService_GetNodeWithEdges(t *testing.T) {
-	t.Run("successful retrieval", func(t *testing.T) {
-		// This test requires creating a service with both node and edge repos
-		// Skipping for now as it needs refactoring of the service
-		t.Skip("Requires service refactoring to inject edge repository")
-	})
-}
 
 // TestNodeService_Pagination tests pagination functionality
 func TestNodeService_Pagination(t *testing.T) {
 	ctx := context.Background()
-	
+
 	// Create 25 test nodes
 	allNodes := make([]models.VaultNode, 25)
 	for i := 0; i < 25; i++ {
@@ -373,7 +643,7 @@ func TestNodeService_Pagination(t *testing.T) {
 			NodeType: "note",
 		}
 	}
-	
+
 	tests := []struct {
 		name       string
 		limit      int
@@ -415,7 +685,7 @@ func TestNodeService_Pagination(t *testing.T) {
 			wantLast:  "",
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mockRepo := &mockNodeRepository{
@@ -430,13 +700,13 @@ func TestNodeService_Pagination(t *testing.T) {
 					return allNodes[offset:end], nil
 				},
 			}
-			
+
 			svc := service.NewNodeServiceWithRepo(&sqlx.DB{}, mockRepo)
-			
+
 			nodes, err := svc.GetAllNodes(ctx, tt.limit, tt.offset)
 			require.NoError(t, err)
 			assert.Len(t, nodes, tt.wantCount)
-			
+
 			if tt.wantCount > 0 {
 				assert.Equal(t, tt.wantFirst, nodes[0].ID)
 				assert.Equal(t, tt.wantLast, nodes[len(nodes)-1].ID)
@@ -448,7 +718,7 @@ func TestNodeService_Pagination(t *testing.T) {
 // TestNodeService_ConcurrentAccess tests concurrent access to the service
 func TestNodeService_ConcurrentAccess(t *testing.T) {
 	ctx := context.Background()
-	
+
 	// Create a mock repository that's safe for concurrent access
 	mockRepo := &mockNodeRepository{
 		countFunc: func(exec repository.Executor, ctx context.Context) (int64, error) {
@@ -456,9 +726,9 @@ func TestNodeService_ConcurrentAccess(t *testing.T) {
 			return 100, nil
 		},
 	}
-	
+
 	svc := service.NewNodeServiceWithRepo(&sqlx.DB{}, mockRepo)
-	
+
 	// Run 10 concurrent operations
 	done := make(chan bool, 10)
 	for i := 0; i < 10; i++ {
@@ -469,9 +739,10 @@ func TestNodeService_ConcurrentAccess(t *testing.T) {
 			done <- true
 		}()
 	}
-	
+
 	// Wait for all operations to complete
 	for i := 0; i < 10; i++ {
 		<-done
 	}
 }
+

@@ -32,7 +32,7 @@ type Config struct {
 func DefaultConfig() *Config {
 	return &Config{
 		Branch:       "main",
-		LocalPath:    "./vault_clone",
+		LocalPath:    "data/vault-clone",
 		SyncInterval: 5 * time.Minute,
 		AutoSync:     true,
 		ShallowClone: true, // Shallow clone for faster performance

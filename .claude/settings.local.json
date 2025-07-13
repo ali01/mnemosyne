@@ -22,7 +22,9 @@
       "Bash(gh pr diff:*)",
       "Bash(gh pr view:*)",
       "Bash(diff:*)",
-      "Bash(true)"
+      "Bash(true)",
+      "Bash(mkdir:*)",
+      "Bash(ls:*)"
     ],
     "deny": []
   }

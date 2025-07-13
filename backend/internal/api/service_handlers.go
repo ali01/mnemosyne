@@ -18,6 +18,7 @@ type ServiceHandler struct {
 	nodeService     *service.NodeService
 	edgeService     *service.EdgeService
 	positionService *service.PositionService
+	vaultService    service.VaultServiceInterface
 	cfg             *config.Config
 }
 
@@ -222,14 +223,56 @@ func (h *ServiceHandler) getViewportNodes(c *gin.Context) {
 
 // parseVault triggers a vault parsing operation
 func (h *ServiceHandler) parseVault(c *gin.Context) {
-	// TODO: Implement when VaultService is available
-	c.JSON(http.StatusNotImplemented, gin.H{"error": "Vault parsing not yet implemented"})
+	// Use request context
+	ctx := c.Request.Context()
+
+	// Check if vault service is available
+	if h.vaultService == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Vault service not configured"})
+		return
+	}
+
+	// Check if parse is already running
+	status, err := h.vaultService.GetParseStatus(ctx)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get parse status"})
+		return
+	}
+
+	if status.Status == "parsing" {
+		c.JSON(http.StatusConflict, gin.H{"error": "Parse already in progress"})
+		return
+	}
+
+	// Start parsing
+	history, err := h.vaultService.ParseAndIndexVault(ctx)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, history)
 }
 
 // getParseStatus returns the status of the latest parse operation
 func (h *ServiceHandler) getParseStatus(c *gin.Context) {
-	// TODO: Implement when VaultService is available
-	c.JSON(http.StatusNotImplemented, gin.H{"error": "Parse status not yet implemented"})
+	// Use request context
+	ctx := c.Request.Context()
+
+	// Check if vault service is available
+	if h.vaultService == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Vault service not configured"})
+		return
+	}
+
+	// Get parse status
+	status, err := h.vaultService.GetParseStatus(ctx)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get parse status"})
+		return
+	}
+
+	c.JSON(http.StatusOK, status)
 }
 
 // calculateNodeLevel calculates the level of a node based on its properties

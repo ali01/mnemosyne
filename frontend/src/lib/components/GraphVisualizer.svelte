@@ -1,12 +1,48 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
-	import { graphStore } from '$lib/stores/graph';
+	import { graphStore, fetchWithRetry } from '$lib/stores/graph';
+	import { debounce } from '$lib/utils/debounce';
+	import { goto } from '$app/navigation';
+	import { toast } from '$lib/stores/toast';
+	import LoadingSpinner from './LoadingSpinner.svelte';
 	import type { Sigma as SigmaType } from 'sigma';
 	
 	let container: HTMLDivElement;
 	let sigma: SigmaType;
 	let Graph: any;
 	let Sigma: any;
+	let savingNodes = new Set<string>();
+	let loading = true;
+	let error = '';
+	
+	// Debounced position update function
+	const debouncedUpdatePosition = debounce(
+		(nodeId: string, position: { x: number; y: number }) => {
+			graphStore.updateNodePosition(nodeId, position);
+		},
+		300 // 300ms debounce
+	);
+	
+	// Subscribe to graph store for saving state
+	const unsubscribe = graphStore.subscribe(state => {
+		savingNodes = state.savingNodes;
+		
+		// Update node visual state based on saving status
+		if (sigma) {
+			savingNodes.forEach(nodeId => {
+				if (sigma.getGraph().hasNode(nodeId)) {
+					sigma.getGraph().setNodeAttribute(nodeId, 'color', '#ffa500'); // Orange for saving
+				}
+			});
+			
+			// Restore original colors for nodes that finished saving
+			sigma.getGraph().forEachNode((node, attributes) => {
+				if (!savingNodes.has(node) && attributes.color === '#ffa500') {
+					sigma.getGraph().setNodeAttribute(node, 'color', getNodeColor(attributes.metadata?.type));
+				}
+			});
+		}
+	});
 	
 	onMount(async () => {
 		// Import graph libraries only on client side
@@ -19,7 +55,12 @@
 		
 		// Load graph data from API
 		try {
-			const response = await fetch('/api/v1/graph?level=0');
+			const response = await fetchWithRetry('/api/v1/graph?level=0');
+			
+			if (!response.ok) {
+				throw new Error(`Failed to load graph: ${response.statusText}`);
+			}
+			
 			const data = await response.json();
 			
 			// Add nodes
@@ -30,6 +71,7 @@
 					size: 10,
 					label: node.title,
 					color: getNodeColor(node.metadata?.type),
+					metadata: node.metadata // Store metadata for later use
 				});
 			});
 			
@@ -44,8 +86,14 @@
 					// Skip if nodes don't exist
 				}
 			});
-		} catch (error) {
-			console.error('Failed to load graph:', error);
+			
+			loading = false;
+		} catch (err) {
+			console.error('Failed to load graph:', err);
+			error = err instanceof Error ? err.message : 'Failed to load graph data';
+			toast.error('Failed to load graph. Please refresh the page to try again.');
+			loading = false;
+			return;
 		}
 		
 		const settings = {
@@ -62,7 +110,8 @@
 		
 		// Handle node clicks
 		sigma.on('clickNode', ({ node }) => {
-			graphStore.selectNode(node);
+			// Navigate to node content page
+			goto(`/notes/${node}`);
 		});
 		
 		// Handle node dragging
@@ -93,6 +142,15 @@
 		sigma.getMouseCaptor().on('mouseup', () => {
 			if (draggedNode && sigma) {
 				sigma.getGraph().setNodeAttribute(draggedNode, 'highlighted', false);
+				
+				// Save the new position to the backend (debounced)
+				const nodeData = sigma.getGraph().getNodeAttributes(draggedNode);
+				if (nodeData.x !== undefined && nodeData.y !== undefined) {
+					debouncedUpdatePosition(draggedNode, {
+						x: nodeData.x,
+						y: nodeData.y
+					});
+				}
 			}
 			draggedNode = null;
 			isDragging = false;
@@ -121,6 +179,7 @@
 		if (sigma) {
 			sigma.kill();
 		}
+		unsubscribe();
 	});
 	
 	function handleZoomIn() {
@@ -143,13 +202,26 @@
 </script>
 
 <div class="graph-container">
-	<div class="graph-canvas" bind:this={container}></div>
-	
-	<div class="controls">
-		<button on:click={handleZoomIn} title="Zoom In">+</button>
-		<button on:click={handleZoomOut} title="Zoom Out">-</button>
-		<button on:click={handleReset} title="Reset View">⟲</button>
-	</div>
+	{#if loading}
+		<div class="loading-container">
+			<LoadingSpinner size="large" message="Loading graph data..." />
+		</div>
+	{:else if error}
+		<div class="error-container">
+			<p class="error-message">{error}</p>
+			<button class="retry-button" on:click={() => window.location.reload()}>
+				Reload Page
+			</button>
+		</div>
+	{:else}
+		<div class="graph-canvas" bind:this={container}></div>
+		
+		<div class="controls">
+			<button on:click={handleZoomIn} title="Zoom In">+</button>
+			<button on:click={handleZoomOut} title="Zoom Out">-</button>
+			<button on:click={handleReset} title="Reset View">⟲</button>
+		</div>
+	{/if}
 </div>
 
 <style>
@@ -193,6 +265,41 @@
 	}
 	
 	button:hover {
+		opacity: 0.8;
+	}
+	
+	.loading-container,
+	.error-container {
+		width: 100%;
+		height: 100%;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		gap: 1.5rem;
+	}
+	
+	.error-message {
+		color: #e74c3c;
+		font-size: 1.2rem;
+		text-align: center;
+		max-width: 400px;
+	}
+	
+	.retry-button {
+		background-color: var(--color-primary);
+		color: white;
+		border: none;
+		padding: 0.75rem 2rem;
+		border-radius: 4px;
+		cursor: pointer;
+		font-size: 1rem;
+		transition: opacity 0.2s;
+		width: auto;
+		height: auto;
+	}
+	
+	.retry-button:hover {
 		opacity: 0.8;
 	}
 </style>

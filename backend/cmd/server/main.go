@@ -15,6 +15,7 @@ import (
 	"github.com/ali01/mnemosyne/internal/api"
 	"github.com/ali01/mnemosyne/internal/config"
 	"github.com/ali01/mnemosyne/internal/db"
+	"github.com/ali01/mnemosyne/internal/git"
 	"github.com/ali01/mnemosyne/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/jmoiron/sqlx"
@@ -62,14 +63,38 @@ func main() {
 		log.Fatalf("Failed to initialize database: %v", err)
 	}
 
+	// Create Git manager
+	gitManager, err := git.NewManager(&cfg.Git)
+	if err != nil {
+		log.Fatalf("Failed to create git manager: %v", err)
+	}
+
+	// Initialize git repository
+	ctx := context.Background()
+	if err := gitManager.Initialize(ctx); err != nil {
+		log.Fatalf("Failed to initialize git repository: %v", err)
+	}
+	defer gitManager.Stop()
+
 	// Create services
 	nodeService := service.NewNodeService(database)
 	edgeService := service.NewEdgeService(database)
 	positionService := service.NewPositionService(database)
+	metadataService := service.NewMetadataService(database)
+
+	// Create vault service
+	vaultService := service.NewVaultService(
+		cfg,
+		gitManager,
+		nodeService,
+		edgeService,
+		metadataService,
+		database,
+	)
 
 	// Initialize router with services
 	router := gin.Default()
-	api.SetupRoutesWithServices(router, nodeService, edgeService, positionService, cfg)
+	api.SetupRoutesWithServices(router, nodeService, edgeService, positionService, vaultService, cfg)
 
 	// Start server
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)

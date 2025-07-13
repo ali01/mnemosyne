@@ -90,7 +90,7 @@ func (s *EdgeService) CountEdges(ctx context.Context) (int64, error) {
 	return s.edgeRepo.Count(s.db, ctx)
 }
 
-// CreateEdgeBatch creates multiple edges efficiently
+// CreateEdgeBatch creates multiple edges in a single operation
 func (s *EdgeService) CreateEdgeBatch(ctx context.Context, edges []models.VaultEdge) error {
 	return s.edgeRepo.CreateBatch(s.db, ctx, edges)
 }
@@ -105,14 +105,14 @@ func (s *EdgeService) DeleteNodeEdges(ctx context.Context, nodeID string) error 
 		if err != nil {
 			return err
 		}
-		
+
 		// Delete each edge
 		for _, edge := range edges {
 			if err := s.edgeRepo.Delete(tx, ctx, edge.ID); err != nil {
 				return err
 			}
 		}
-		
+
 		return nil
 	})
 }

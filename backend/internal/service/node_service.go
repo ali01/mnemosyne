@@ -81,9 +81,8 @@ func (s *NodeService) CountNodes(ctx context.Context) (int64, error) {
 	return s.nodeRepo.Count(s.db, ctx)
 }
 
-// CreateNodeBatch creates multiple nodes efficiently
+// CreateNodeBatch creates multiple nodes in a single operation
 func (s *NodeService) CreateNodeBatch(ctx context.Context, nodes []models.VaultNode) error {
-	// The repository handles transaction internally for batch operations
 	return s.nodeRepo.CreateBatch(s.db, ctx, nodes)
 }
 

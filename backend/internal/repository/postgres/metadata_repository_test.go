@@ -54,7 +54,7 @@ func TestMetadataRepositoryStateless(t *testing.T) {
 		}
 		err := repos.Metadata.SetMetadata(tdb.DB, ctx, initial)
 		require.NoError(t, err)
-		
+
 		// Get the actual initial timestamp
 		initialRetrieved, err := repos.Metadata.GetMetadata(tdb.DB, ctx, "update.test")
 		require.NoError(t, err)
@@ -155,7 +155,7 @@ func TestMetadataRepositoryStateless(t *testing.T) {
 	t.Run("GetLatestParse", func(t *testing.T) {
 		// Clean up any existing parse records
 		_, _ = tdb.ExecContext(ctx, "DELETE FROM parse_history")
-		
+
 		// Create multiple parse records
 		now := time.Now()
 		records := []models.ParseHistory{
@@ -198,11 +198,11 @@ func TestMetadataRepositoryStateless(t *testing.T) {
 		latest, err := repos.Metadata.GetLatestParse(tdb.DB, ctx)
 		assert.NoError(t, err)
 		require.NotNil(t, latest)
-		
+
 		// Debug output
-		t.Logf("Latest parse: Status=%s, TotalNodes=%d, TotalEdges=%d", 
+		t.Logf("Latest parse: Status=%s, TotalNodes=%d, TotalEdges=%d",
 			latest.Status, latest.Stats.TotalNodes, latest.Stats.TotalEdges)
-		
+
 		assert.Equal(t, models.ParseStatusRunning, latest.Status)
 		// Check that we got the most recent record (the one with TotalNodes = 5)
 		assert.Equal(t, 5, latest.Stats.TotalNodes)
@@ -264,7 +264,7 @@ func TestMetadataRepositoryStateless(t *testing.T) {
 		require.NoError(t, err)
 
 		// Update status to completed
-		err = repos.Metadata.UpdateParseStatus(tdb.DB, ctx, record.ID, models.ParseStatusCompleted)
+		err = repos.Metadata.UpdateParseStatus(tdb.DB, ctx, record.ID, models.ParseStatusCompleted, nil)
 		assert.NoError(t, err)
 
 		// Verify update
@@ -288,7 +288,7 @@ func TestMetadataRepositoryStateless(t *testing.T) {
 		require.NoError(t, err)
 
 		// Update status to failed
-		err = repos.Metadata.UpdateParseStatus(tdb.DB, ctx, record.ID, models.ParseStatusFailed)
+		err = repos.Metadata.UpdateParseStatus(tdb.DB, ctx, record.ID, models.ParseStatusFailed, nil)
 		assert.NoError(t, err)
 
 		// Verify update
@@ -298,7 +298,7 @@ func TestMetadataRepositoryStateless(t *testing.T) {
 	})
 
 	t.Run("UpdateParseStatus_NotFound", func(t *testing.T) {
-		err := repos.Metadata.UpdateParseStatus(tdb.DB, ctx, "non-existent-id", models.ParseStatusCompleted)
+		err := repos.Metadata.UpdateParseStatus(tdb.DB, ctx, "non-existent-id", models.ParseStatusCompleted, nil)
 		assert.Error(t, err)
 		assert.True(t, repository.IsNotFound(err))
 	})

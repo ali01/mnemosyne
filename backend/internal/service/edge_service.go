@@ -3,6 +3,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/jmoiron/sqlx"
 
@@ -60,10 +61,6 @@ func (s *EdgeService) DeleteEdge(ctx context.Context, id string) error {
 	return s.edgeRepo.Delete(s.db, ctx, id)
 }
 
-// CreateEdges creates multiple edges efficiently
-func (s *EdgeService) CreateEdges(ctx context.Context, edges []models.VaultEdge) error {
-	return s.edgeRepo.CreateBatch(s.db, ctx, edges)
-}
 
 // UpsertEdges inserts or updates multiple edges
 func (s *EdgeService) UpsertEdges(ctx context.Context, edges []models.VaultEdge) error {
@@ -90,9 +87,25 @@ func (s *EdgeService) CountEdges(ctx context.Context) (int64, error) {
 	return s.edgeRepo.Count(s.db, ctx)
 }
 
-// CreateEdgeBatch creates multiple edges efficiently
-func (s *EdgeService) CreateEdgeBatch(ctx context.Context, edges []models.VaultEdge) error {
-	return s.edgeRepo.CreateBatch(s.db, ctx, edges)
+// CreateEdgeBatchTx creates multiple edges in a single operation within a transaction
+func (s *EdgeService) CreateEdgeBatchTx(tx repository.Executor, ctx context.Context, edges []models.VaultEdge) error {
+	// Early return for empty slice
+	if len(edges) == 0 {
+		return nil
+	}
+
+	// Business logic validation: check for duplicates within batch
+	seen := make(map[string]bool, len(edges))
+	for _, edge := range edges {
+		if edge.ID != "" && seen[edge.ID] {
+			return fmt.Errorf("duplicate edge ID in batch: %s", edge.ID)
+		}
+		if edge.ID != "" {
+			seen[edge.ID] = true
+		}
+	}
+
+	return s.edgeRepo.CreateBatch(tx, ctx, edges)
 }
 
 // DeleteNodeEdges removes all edges connected to a specific node
@@ -105,14 +118,14 @@ func (s *EdgeService) DeleteNodeEdges(ctx context.Context, nodeID string) error 
 		if err != nil {
 			return err
 		}
-		
+
 		// Delete each edge
 		for _, edge := range edges {
 			if err := s.edgeRepo.Delete(tx, ctx, edge.ID); err != nil {
 				return err
 			}
 		}
-		
+
 		return nil
 	})
 }

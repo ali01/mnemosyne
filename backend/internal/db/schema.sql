@@ -43,7 +43,7 @@ CREATE TABLE IF NOT EXISTS edges (
 );
 
 CREATE TABLE IF NOT EXISTS node_positions (
-    node_id VARCHAR(20) PRIMARY KEY REFERENCES nodes(id) ON DELETE CASCADE,
+    node_id VARCHAR(20) PRIMARY KEY,         -- No foreign key to allow positions to persist
     x FLOAT NOT NULL,
     y FLOAT NOT NULL,
     z FLOAT DEFAULT 0,

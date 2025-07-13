@@ -34,7 +34,8 @@ func (m *JSONMetadata) Scan(value interface{}) error {
 // Value implements the driver.Valuer interface for database serialization
 func (m JSONMetadata) Value() (driver.Value, error) {
 	if len(m) == 0 {
-		return nil, nil
+		// Return empty JSON object instead of nil for COPY compatibility
+		return []byte("{}"), nil
 	}
 	return json.Marshal(m)
 }
@@ -61,3 +62,4 @@ func (m *JSONMetadata) UnmarshalJSON(data []byte) error {
 	*m = JSONMetadata(result)
 	return nil
 }
+

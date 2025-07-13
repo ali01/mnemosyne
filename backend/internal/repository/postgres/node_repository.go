@@ -46,7 +46,7 @@ func (r *NodeRepository) Create(exec repository.Executor, ctx context.Context, n
 
 	_, err := exec.ExecContext(ctx, query,
 		node.ID, node.Title, node.NodeType, node.Tags, node.Content,
-		node.Metadata, node.FilePath, node.InDegree, node.OutDegree,
+		ensureMetadata(node.Metadata), node.FilePath, node.InDegree, node.OutDegree,
 		node.Centrality, node.CreatedAt, node.UpdatedAt,
 	)
 	if err != nil {
@@ -88,7 +88,7 @@ func (r *NodeRepository) Update(exec repository.Executor, ctx context.Context, n
 
 	result, err := exec.ExecContext(ctx, query,
 		node.ID, node.Title, node.NodeType, node.Tags, node.Content,
-		node.Metadata, node.FilePath, node.InDegree, node.OutDegree,
+		ensureMetadata(node.Metadata), node.FilePath, node.InDegree, node.OutDegree,
 		node.Centrality, node.UpdatedAt,
 	)
 	if err != nil {
@@ -170,9 +170,19 @@ func (r *NodeRepository) createBatchWithCopy(ctx context.Context, tx *sqlx.Tx, n
 		node.CreatedAt = now
 		node.UpdatedAt = now
 
+		// Ensure metadata is not nil for JSON column
+		metadata := ensureMetadata(node.Metadata)
+		// Convert metadata to JSON string for COPY
+		metadataJSON, err := metadata.Value()
+		if err != nil {
+			return fmt.Errorf("failed to serialize metadata for node %s: %w", node.ID, err)
+		}
+		// COPY expects string, not []byte
+		metadataStr := string(metadataJSON.([]byte))
+
 		_, err = stmt.Exec(
 			node.ID, node.Title, node.NodeType, node.Tags,
-			node.Content, node.Metadata, node.FilePath,
+			node.Content, metadataStr, node.FilePath,
 			node.InDegree, node.OutDegree, node.Centrality,
 			node.CreatedAt, node.UpdatedAt,
 		)
@@ -253,7 +263,7 @@ func (r *NodeRepository) upsertBatchInTx(exec repository.Executor, ctx context.C
 
 		_, err := exec.ExecContext(ctx, query,
 			node.ID, node.Title, node.NodeType, node.Tags, node.Content,
-			node.Metadata, node.FilePath, node.InDegree, node.OutDegree,
+			ensureMetadata(node.Metadata), node.FilePath, node.InDegree, node.OutDegree,
 			node.Centrality, node.CreatedAt, node.UpdatedAt,
 		)
 		if err != nil {
@@ -400,14 +410,25 @@ func (r *NodeRepository) DeleteAll(exec repository.Executor, ctx context.Context
 	return nil
 }
 
-// validateNode checks that required fields are present
+// validateNode delegates to the model's own validation
 func (r *NodeRepository) validateNode(node *models.VaultNode) error {
-	if node.Title == "" {
-		return fmt.Errorf("node title is required")
+	// Note: ID can be empty as it will be generated if not provided
+	// So we skip ID validation if it's empty
+	if node.ID == "" {
+		// Temporarily set a dummy ID for validation
+		originalID := node.ID
+		node.ID = "temp-for-validation"
+		err := node.Validate()
+		node.ID = originalID
+		return err
 	}
-	if node.FilePath == "" {
-		return fmt.Errorf("node file path is required")
+	return node.Validate()
+}
+
+// ensureMetadata returns the node's metadata or an empty map if nil
+func ensureMetadata(metadata models.JSONMetadata) models.JSONMetadata {
+	if metadata == nil {
+		return make(models.JSONMetadata)
 	}
-	// ID can be empty as it will be generated if not provided
-	return nil
+	return metadata
 }

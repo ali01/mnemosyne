@@ -1,7 +1,10 @@
 // Package models defines data structures for vault-specific graph nodes and edges
 package models
 
-import "time"
+import (
+	"fmt"
+	"time"
+)
 
 // VaultNode represents a node in the knowledge graph with vault-specific metadata
 // Bridge between file-centric parser output and node-centric graph visualization
@@ -73,6 +76,7 @@ type ParseHistory struct {
 type ParseStatus string
 
 const (
+	ParseStatusIdle      ParseStatus = "idle"      // No parse has been performed
 	ParseStatusPending   ParseStatus = "pending"
 	ParseStatusRunning   ParseStatus = "running"
 	ParseStatusCompleted ParseStatus = "completed"
@@ -87,4 +91,47 @@ type ParseStats struct {
 	TotalEdges      int   `json:"total_edges"`
 	DurationMS      int64 `json:"duration_ms"` // Duration in milliseconds
 	UnresolvedLinks int   `json:"unresolved_links"`
+}
+
+// Validate performs validation on VaultNode fields
+func (n *VaultNode) Validate() error {
+	if n.ID == "" {
+		return fmt.Errorf("node ID is required")
+	}
+	if n.Title == "" {
+		return fmt.Errorf("node title is required")
+	}
+	if n.FilePath == "" {
+		return fmt.Errorf("node file path is required")
+	}
+	if n.InDegree < 0 {
+		return fmt.Errorf("node in_degree cannot be negative")
+	}
+	if n.OutDegree < 0 {
+		return fmt.Errorf("node out_degree cannot be negative")
+	}
+	if n.Centrality < 0 || n.Centrality > 1 {
+		return fmt.Errorf("node centrality must be between 0 and 1")
+	}
+	return nil
+}
+
+// Validate performs validation on VaultEdge fields
+func (e *VaultEdge) Validate() error {
+	if e.SourceID == "" {
+		return fmt.Errorf("edge source ID is required")
+	}
+	if e.TargetID == "" {
+		return fmt.Errorf("edge target ID is required")
+	}
+	if e.SourceID == e.TargetID {
+		return fmt.Errorf("self-referential edges are not allowed")
+	}
+	if e.EdgeType != "wikilink" && e.EdgeType != "embed" {
+		return fmt.Errorf("edge type must be 'wikilink' or 'embed', got: %s", e.EdgeType)
+	}
+	if e.Weight < 0 {
+		return fmt.Errorf("edge weight cannot be negative")
+	}
+	return nil
 }

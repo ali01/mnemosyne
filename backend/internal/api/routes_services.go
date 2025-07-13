@@ -7,7 +7,7 @@ import (
 )
 
 // SetupRoutesWithServices configures all API routes with service access
-func SetupRoutesWithServices(router *gin.Engine, nodeService *service.NodeService, edgeService *service.EdgeService, positionService *service.PositionService, cfg *config.Config) {
+func SetupRoutesWithServices(router *gin.Engine, nodeService *service.NodeService, edgeService *service.EdgeService, positionService *service.PositionService, vaultService service.VaultServiceInterface, cfg *config.Config) {
 	router.Use(CORSMiddleware())
 
 	// Create handler with services
@@ -15,6 +15,7 @@ func SetupRoutesWithServices(router *gin.Engine, nodeService *service.NodeServic
 		nodeService:     nodeService,
 		edgeService:     edgeService,
 		positionService: positionService,
+		vaultService:    vaultService,
 		cfg:             cfg,
 	}
 
@@ -25,16 +26,19 @@ func SetupRoutesWithServices(router *gin.Engine, nodeService *service.NodeServic
 		// Graph endpoints
 		api.GET("/graph", h.getGraph)
 		api.GET("/graph/viewport", h.getViewportNodes)
-		
+
 		// Node endpoints
 		api.GET("/nodes/:id", h.getNode)
 		api.GET("/nodes/:id/content", h.getNodeContent)
 		api.PUT("/nodes/:id/position", h.updateNodePosition)
 		api.GET("/nodes/search", h.searchNodes)
-		
-		// Vault management endpoints (for future use)
-		api.POST("/vault/parse", h.parseVault)
-		api.GET("/vault/status", h.getParseStatus)
+
+		// Vault parse endpoints (RESTful resource-based)
+		// TODO(CL): Consider adding DELETE /vault/parses/:id to cancel running parses
+		api.POST("/vault/parses", h.createParse)           // Create new parse job
+		api.GET("/vault/parses", h.listParses)            // List all parse history
+		api.GET("/vault/parses/latest", h.getLatestParse) // Get latest parse status
+		api.GET("/vault/parses/:id", h.getParseById)      // Get specific parse status
 	}
 }
 

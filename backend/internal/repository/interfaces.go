@@ -89,7 +89,7 @@ type MetadataRepository interface {
 	CreateParseRecord(exec Executor, ctx context.Context, record *models.ParseHistory) error
 	GetLatestParse(exec Executor, ctx context.Context) (*models.ParseHistory, error)
 	GetParseHistory(exec Executor, ctx context.Context, limit int) ([]models.ParseHistory, error)
-	UpdateParseStatus(exec Executor, ctx context.Context, id string, status models.ParseStatus) error
+	UpdateParseStatus(exec Executor, ctx context.Context, id string, status models.ParseStatus, errorMsg *string) error
 }
 
 // TransactionManager handles database transactions.

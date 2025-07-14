@@ -18,11 +18,20 @@ import (
 	"github.com/ali01/mnemosyne/internal/vault"
 )
 
+// GitManagerInterface defines the interface for git operations needed by VaultService
+type GitManagerInterface interface {
+	Pull(ctx context.Context) error
+	GetLocalPath() string
+}
+
+// Compile-time check that git.Manager implements GitManagerInterface
+var _ GitManagerInterface = (*git.Manager)(nil)
+
 // VaultService orchestrates the parsing pipeline, connecting Git integration,
 // vault parser, and graph builder with the database layer
 type VaultService struct {
 	config          *config.Config
-	gitManager      *git.Manager
+	gitManager      GitManagerInterface
 	nodeService     NodeServiceInterface
 	edgeService     EdgeServiceInterface
 	metadataService *MetadataService // Use concrete type for parse history methods
@@ -38,7 +47,7 @@ type VaultService struct {
 // NewVaultService creates a new vault service with all dependencies
 func NewVaultService(
 	cfg *config.Config,
-	gitManager *git.Manager,
+	gitManager GitManagerInterface,
 	nodeService NodeServiceInterface,
 	edgeService EdgeServiceInterface,
 	metadataService *MetadataService,

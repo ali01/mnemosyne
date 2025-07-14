@@ -3,7 +3,7 @@
 	import { toast } from '$lib/stores/toast';
 
 	let toasts: typeof $toast = [];
-	
+
 	$: toasts = $toast;
 
 	function getIcon(type: string) {
@@ -18,19 +18,25 @@
 				return 'ℹ';
 		}
 	}
+
+	function removeToast(id: string) {
+		toast.remove(id);
+	}
 </script>
 
 <div class="toast-container">
 	{#each toasts as toast (toast.id)}
 		<div
 			class="toast toast-{toast.type}"
+			role="alert"
+			aria-live="assertive"
 			transition:fly={{ y: 50, duration: 300 }}
 		>
 			<span class="toast-icon">{getIcon(toast.type)}</span>
 			<span class="toast-message">{toast.message}</span>
 			<button
 				class="toast-close"
-				on:click={() => toast.remove(toast.id)}
+				on:click={() => removeToast(toast.id)}
 				aria-label="Close notification"
 			>
 				×

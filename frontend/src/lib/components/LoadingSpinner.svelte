@@ -3,11 +3,12 @@
 	export let message = '';
 </script>
 
-<div class="loading-spinner loading-spinner-{size}">
-	<div class="spinner"></div>
+<div class="loading-spinner loading-spinner-{size}" role="status" aria-live="polite">
+	<div class="spinner" aria-hidden="true"></div>
 	{#if message}
 		<p class="loading-message">{message}</p>
 	{/if}
+	<span class="sr-only">Loading...</span>
 </div>
 
 <style>
@@ -54,5 +55,17 @@
 		font-size: 0.9rem;
 		margin: 0;
 		text-align: center;
+	}
+
+	.sr-only {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		padding: 0;
+		margin: -1px;
+		overflow: hidden;
+		clip: rect(0, 0, 0, 0);
+		white-space: nowrap;
+		border: 0;
 	}
 </style>

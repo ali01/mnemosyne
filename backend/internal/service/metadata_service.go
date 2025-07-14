@@ -25,6 +25,14 @@ func NewMetadataService(db *sqlx.DB) *MetadataService {
 	}
 }
 
+// NewMetadataServiceWithRepo creates a new metadata service with a custom repository (for testing)
+func NewMetadataServiceWithRepo(db *sqlx.DB, repo repository.MetadataRepository) *MetadataService {
+	return &MetadataService{
+		db:           db,
+		metadataRepo: repo,
+	}
+}
+
 // GetMetadata retrieves a metadata value by key
 func (s *MetadataService) GetMetadata(ctx context.Context, key string) (*models.VaultMetadata, error) {
 	return s.metadataRepo.GetMetadata(s.db, ctx, key)

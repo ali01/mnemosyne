@@ -17,7 +17,7 @@ type NodeServiceInterface interface {
 	GetNode(ctx context.Context, id string) (*models.VaultNode, error)
 	GetNodeByPath(ctx context.Context, path string) (*models.VaultNode, error)
 	CreateNode(ctx context.Context, node *models.VaultNode) error
-	CreateNodeBatch(ctx context.Context, nodes []models.VaultNode) error
+	CreateNodes(ctx context.Context, nodes []models.VaultNode) error
 	CreateNodeBatchTx(tx repository.Executor, ctx context.Context, nodes []models.VaultNode) error
 	UpdateNode(ctx context.Context, node *models.VaultNode) error
 	DeleteNode(ctx context.Context, id string) error
@@ -33,7 +33,7 @@ type NodeServiceInterface interface {
 // ensures referential integrity and handles edge-related business logic.
 type EdgeServiceInterface interface {
 	CreateEdge(ctx context.Context, edge *models.VaultEdge) error
-	CreateEdgeBatch(ctx context.Context, edges []models.VaultEdge) error
+	CreateEdges(ctx context.Context, edges []models.VaultEdge) error
 	CreateEdgeBatchTx(tx repository.Executor, ctx context.Context, edges []models.VaultEdge) error
 	GetEdge(ctx context.Context, id string) (*models.VaultEdge, error)
 	UpdateEdge(ctx context.Context, edge *models.VaultEdge) error

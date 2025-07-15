@@ -90,11 +90,6 @@ func (s *EdgeService) CountEdges(ctx context.Context) (int64, error) {
 	return s.edgeRepo.Count(s.db, ctx)
 }
 
-// CreateEdgeBatch creates multiple edges in a single operation
-func (s *EdgeService) CreateEdgeBatch(ctx context.Context, edges []models.VaultEdge) error {
-	return s.edgeRepo.CreateBatch(s.db, ctx, edges)
-}
-
 // CreateEdgeBatchTx creates multiple edges in a single operation within a transaction
 func (s *EdgeService) CreateEdgeBatchTx(tx repository.Executor, ctx context.Context, edges []models.VaultEdge) error {
 	return s.edgeRepo.CreateBatch(tx, ctx, edges)

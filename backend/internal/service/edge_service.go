@@ -95,6 +95,11 @@ func (s *EdgeService) CreateEdgeBatch(ctx context.Context, edges []models.VaultE
 	return s.edgeRepo.CreateBatch(s.db, ctx, edges)
 }
 
+// CreateEdgeBatchTx creates multiple edges in a single operation within a transaction
+func (s *EdgeService) CreateEdgeBatchTx(tx repository.Executor, ctx context.Context, edges []models.VaultEdge) error {
+	return s.edgeRepo.CreateBatch(tx, ctx, edges)
+}
+
 // DeleteNodeEdges removes all edges connected to a specific node
 func (s *EdgeService) DeleteNodeEdges(ctx context.Context, nodeID string) error {
 	// This would typically be implemented in the repository

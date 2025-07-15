@@ -5,6 +5,7 @@ import (
 	"context"
 
 	"github.com/ali01/mnemosyne/internal/models"
+	"github.com/ali01/mnemosyne/internal/repository"
 )
 
 // NodeServiceInterface defines the interface for node operations.
@@ -17,6 +18,7 @@ type NodeServiceInterface interface {
 	GetNodeByPath(ctx context.Context, path string) (*models.VaultNode, error)
 	CreateNode(ctx context.Context, node *models.VaultNode) error
 	CreateNodeBatch(ctx context.Context, nodes []models.VaultNode) error
+	CreateNodeBatchTx(tx repository.Executor, ctx context.Context, nodes []models.VaultNode) error
 	UpdateNode(ctx context.Context, node *models.VaultNode) error
 	DeleteNode(ctx context.Context, id string) error
 	GetAllNodes(ctx context.Context, limit, offset int) ([]models.VaultNode, error)
@@ -32,6 +34,7 @@ type NodeServiceInterface interface {
 type EdgeServiceInterface interface {
 	CreateEdge(ctx context.Context, edge *models.VaultEdge) error
 	CreateEdgeBatch(ctx context.Context, edges []models.VaultEdge) error
+	CreateEdgeBatchTx(tx repository.Executor, ctx context.Context, edges []models.VaultEdge) error
 	GetEdge(ctx context.Context, id string) (*models.VaultEdge, error)
 	UpdateEdge(ctx context.Context, edge *models.VaultEdge) error
 	DeleteEdge(ctx context.Context, id string) error

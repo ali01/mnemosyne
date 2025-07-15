@@ -300,7 +300,7 @@ func (s *VaultService) storeNodes(ctx context.Context, tx *sqlx.Tx, nodes []mode
 		}
 
 		batch := nodes[i:end]
-		if err := s.nodeService.CreateNodeBatch(ctx, batch); err != nil {
+		if err := s.nodeService.CreateNodeBatchTx(tx, ctx, batch); err != nil {
 			return fmt.Errorf("failed to create node batch: %w", err)
 		}
 
@@ -330,7 +330,7 @@ func (s *VaultService) storeEdges(ctx context.Context, tx *sqlx.Tx, edges []mode
 		}
 
 		batch := edges[i:end]
-		if err := s.edgeService.CreateEdgeBatch(ctx, batch); err != nil {
+		if err := s.edgeService.CreateEdgeBatchTx(tx, ctx, batch); err != nil {
 			return fmt.Errorf("failed to create edge batch: %w", err)
 		}
 

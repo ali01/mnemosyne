@@ -23,16 +23,17 @@ import (
 
 // mockNodeService implements NodeServiceInterface for testing
 type mockNodeService struct {
-	getNodeFunc         func(ctx context.Context, id string) (*models.VaultNode, error)
-	getNodeByPathFunc   func(ctx context.Context, path string) (*models.VaultNode, error)
-	createNodeFunc      func(ctx context.Context, node *models.VaultNode) error
-	createNodeBatchFunc func(ctx context.Context, nodes []models.VaultNode) error
-	updateNodeFunc      func(ctx context.Context, node *models.VaultNode) error
-	deleteNodeFunc      func(ctx context.Context, id string) error
-	getAllNodesFunc     func(ctx context.Context, limit, offset int) ([]models.VaultNode, error)
-	getNodesByTypeFunc  func(ctx context.Context, nodeType string) ([]models.VaultNode, error)
-	searchNodesFunc     func(ctx context.Context, query string) ([]models.VaultNode, error)
-	countFunc           func(ctx context.Context) (int64, error)
+	getNodeFunc           func(ctx context.Context, id string) (*models.VaultNode, error)
+	getNodeByPathFunc     func(ctx context.Context, path string) (*models.VaultNode, error)
+	createNodeFunc        func(ctx context.Context, node *models.VaultNode) error
+	createNodeBatchFunc   func(ctx context.Context, nodes []models.VaultNode) error
+	createNodeBatchTxFunc func(tx repository.Executor, ctx context.Context, nodes []models.VaultNode) error
+	updateNodeFunc        func(ctx context.Context, node *models.VaultNode) error
+	deleteNodeFunc        func(ctx context.Context, id string) error
+	getAllNodesFunc       func(ctx context.Context, limit, offset int) ([]models.VaultNode, error)
+	getNodesByTypeFunc    func(ctx context.Context, nodeType string) ([]models.VaultNode, error)
+	searchNodesFunc       func(ctx context.Context, query string) ([]models.VaultNode, error)
+	countFunc             func(ctx context.Context) (int64, error)
 }
 
 func (m *mockNodeService) GetNode(ctx context.Context, id string) (*models.VaultNode, error) {
@@ -59,6 +60,13 @@ func (m *mockNodeService) CreateNode(ctx context.Context, node *models.VaultNode
 func (m *mockNodeService) CreateNodeBatch(ctx context.Context, nodes []models.VaultNode) error {
 	if m.createNodeBatchFunc != nil {
 		return m.createNodeBatchFunc(ctx, nodes)
+	}
+	return nil
+}
+
+func (m *mockNodeService) CreateNodeBatchTx(tx repository.Executor, ctx context.Context, nodes []models.VaultNode) error {
+	if m.createNodeBatchTxFunc != nil {
+		return m.createNodeBatchTxFunc(tx, ctx, nodes)
 	}
 	return nil
 }
@@ -107,14 +115,15 @@ func (m *mockNodeService) CountNodes(ctx context.Context) (int64, error) {
 
 // mockEdgeService implements EdgeServiceInterface for testing
 type mockEdgeService struct {
-	createEdgeFunc      func(ctx context.Context, edge *models.VaultEdge) error
-	createEdgeBatchFunc func(ctx context.Context, edges []models.VaultEdge) error
-	getEdgeFunc         func(ctx context.Context, id string) (*models.VaultEdge, error)
-	updateEdgeFunc      func(ctx context.Context, edge *models.VaultEdge) error
-	deleteEdgeFunc      func(ctx context.Context, id string) error
-	getAllEdgesFunc     func(ctx context.Context, limit, offset int) ([]models.VaultEdge, error)
-	getEdgesByNodeFunc  func(ctx context.Context, nodeID string) ([]models.VaultEdge, error)
-	countFunc           func(ctx context.Context) (int64, error)
+	createEdgeFunc        func(ctx context.Context, edge *models.VaultEdge) error
+	createEdgeBatchFunc   func(ctx context.Context, edges []models.VaultEdge) error
+	createEdgeBatchTxFunc func(tx repository.Executor, ctx context.Context, edges []models.VaultEdge) error
+	getEdgeFunc           func(ctx context.Context, id string) (*models.VaultEdge, error)
+	updateEdgeFunc        func(ctx context.Context, edge *models.VaultEdge) error
+	deleteEdgeFunc        func(ctx context.Context, id string) error
+	getAllEdgesFunc       func(ctx context.Context, limit, offset int) ([]models.VaultEdge, error)
+	getEdgesByNodeFunc    func(ctx context.Context, nodeID string) ([]models.VaultEdge, error)
+	countFunc             func(ctx context.Context) (int64, error)
 }
 
 func (m *mockEdgeService) CreateEdge(ctx context.Context, edge *models.VaultEdge) error {
@@ -127,6 +136,13 @@ func (m *mockEdgeService) CreateEdge(ctx context.Context, edge *models.VaultEdge
 func (m *mockEdgeService) CreateEdgeBatch(ctx context.Context, edges []models.VaultEdge) error {
 	if m.createEdgeBatchFunc != nil {
 		return m.createEdgeBatchFunc(ctx, edges)
+	}
+	return nil
+}
+
+func (m *mockEdgeService) CreateEdgeBatchTx(tx repository.Executor, ctx context.Context, edges []models.VaultEdge) error {
+	if m.createEdgeBatchTxFunc != nil {
+		return m.createEdgeBatchTxFunc(tx, ctx, edges)
 	}
 	return nil
 }
@@ -335,12 +351,18 @@ func setupMockDependencies(t *testing.T) *mockDependencies {
 			createNodeBatchFunc: func(ctx context.Context, nodes []models.VaultNode) error {
 				return nil
 			},
+			createNodeBatchTxFunc: func(tx repository.Executor, ctx context.Context, nodes []models.VaultNode) error {
+				return nil
+			},
 			countFunc: func(ctx context.Context) (int64, error) {
 				return 0, nil
 			},
 		},
 		edgeService: &mockEdgeService{
 			createEdgeBatchFunc: func(ctx context.Context, edges []models.VaultEdge) error {
+				return nil
+			},
+			createEdgeBatchTxFunc: func(tx repository.Executor, ctx context.Context, edges []models.VaultEdge) error {
 				return nil
 			},
 			countFunc: func(ctx context.Context) (int64, error) {

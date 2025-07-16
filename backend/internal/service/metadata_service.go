@@ -43,6 +43,11 @@ func (s *MetadataService) SetMetadata(ctx context.Context, metadata *models.Vaul
 	return s.metadataRepo.SetMetadata(s.db, ctx, metadata)
 }
 
+// SetMetadataTx sets a metadata value within a transaction
+func (s *MetadataService) SetMetadataTx(tx repository.Executor, ctx context.Context, metadata *models.VaultMetadata) error {
+	return s.metadataRepo.SetMetadata(tx, ctx, metadata)
+}
+
 // GetAllMetadata retrieves all metadata entries
 func (s *MetadataService) GetAllMetadata(ctx context.Context) ([]models.VaultMetadata, error) {
 	return s.metadataRepo.GetAllMetadata(s.db, ctx)
@@ -66,4 +71,9 @@ func (s *MetadataService) GetParseHistory(ctx context.Context, limit int) ([]mod
 // UpdateParseStatus updates the status of a parse record
 func (s *MetadataService) UpdateParseStatus(ctx context.Context, id string, status models.ParseStatus) error {
 	return s.metadataRepo.UpdateParseStatus(s.db, ctx, id, status)
+}
+
+// UpdateParseStatusTx updates the status of a parse record within a transaction
+func (s *MetadataService) UpdateParseStatusTx(tx repository.Executor, ctx context.Context, id string, status models.ParseStatus) error {
+	return s.metadataRepo.UpdateParseStatus(tx, ctx, id, status)
 }

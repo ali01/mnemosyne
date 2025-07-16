@@ -61,8 +61,11 @@ type PositionServiceInterface interface {
 // configuration settings and tracking the state of vault parsing operations.
 type MetadataServiceInterface interface {
 	GetMetadata(ctx context.Context, key string) (*models.VaultMetadata, error)
-	SetMetadata(ctx context.Context, key, value string) error
+	SetMetadata(ctx context.Context, metadata *models.VaultMetadata) error
+	SetMetadataTx(tx repository.Executor, ctx context.Context, metadata *models.VaultMetadata) error
 	GetAllMetadata(ctx context.Context) ([]models.VaultMetadata, error)
+	UpdateParseStatus(ctx context.Context, id string, status models.ParseStatus) error
+	UpdateParseStatusTx(tx repository.Executor, ctx context.Context, id string, status models.ParseStatus) error
 }
 
 // VaultServiceInterface defines the interface for vault operations.

@@ -15,6 +15,7 @@ import (
 	"github.com/ali01/mnemosyne/internal/db"
 	"github.com/ali01/mnemosyne/internal/git"
 	"github.com/ali01/mnemosyne/internal/models"
+	"github.com/ali01/mnemosyne/internal/repository"
 	"github.com/ali01/mnemosyne/internal/vault"
 )
 
@@ -270,7 +271,7 @@ func (s *VaultService) storeGraphInDatabase(ctx context.Context, parseResult *va
 		}
 
 		// Update metadata
-		if err := s.updateVaultMetadata(ctx, logger); err != nil {
+		if err := s.updateVaultMetadata(tx, ctx, logger); err != nil {
 			return err
 		}
 
@@ -356,14 +357,14 @@ func (s *VaultService) storeEdges(ctx context.Context, tx *sqlx.Tx, edges []mode
 }
 
 // updateVaultMetadata updates the last parse timestamp
-func (s *VaultService) updateVaultMetadata(ctx context.Context, logger *slog.Logger) error {
+func (s *VaultService) updateVaultMetadata(tx repository.Executor, ctx context.Context, logger *slog.Logger) error {
 	logger.Info("Updating vault metadata")
 	metadata := &models.VaultMetadata{
 		Key:       "last_parse",
 		Value:     time.Now().Format(time.RFC3339),
 		UpdatedAt: time.Now(),
 	}
-	return s.metadataService.SetMetadata(ctx, metadata)
+	return s.metadataService.SetMetadataTx(tx, ctx, metadata)
 }
 
 // updateParseStats updates the parse history with final statistics

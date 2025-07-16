@@ -239,7 +239,7 @@ func (h *ServiceHandler) parseVault(c *gin.Context) {
 		return
 	}
 
-	if status.Status == "parsing" {
+	if status.Status == string(models.ParseStatusRunning) {
 		c.JSON(http.StatusConflict, gin.H{"error": "Parse already in progress"})
 		return
 	}

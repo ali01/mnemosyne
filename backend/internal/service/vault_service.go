@@ -38,10 +38,11 @@ type VaultService struct {
 	db              *sqlx.DB
 
 	// State management
-	mu             sync.Mutex
-	currentParseID string
-	isParsing      bool
-	parseProgress  *models.ParseProgress
+	mu              sync.Mutex
+	currentParseID  string
+	isParsing       bool
+	parseStartTime  time.Time
+	parseProgress   *models.ParseProgress
 }
 
 // NewVaultService creates a new vault service with all dependencies
@@ -120,12 +121,18 @@ func (s *VaultService) initializeParseHistory(ctx context.Context, parseID strin
 	logger := s.logger().With("parse_id", parseID)
 	logger.Info("Starting vault parse")
 
+	startTime := time.Now()
 	parseHistory := &models.ParseHistory{
 		ID:        parseID,
-		StartedAt: time.Now(),
+		StartedAt: startTime,
 		Status:    models.ParseStatusRunning,
 		Stats:     models.JSONStats{},
 	}
+
+	// Store the start time in the service state
+	s.mu.Lock()
+	s.parseStartTime = startTime
+	s.mu.Unlock()
 
 	if err := s.metadataService.CreateParseRecord(ctx, parseHistory); err != nil {
 		logger.Error("Failed to create parse history", "error", err)
@@ -400,7 +407,7 @@ func (s *VaultService) GetParseStatus(ctx context.Context) (*models.ParseStatusR
 		history := &models.ParseHistory{
 			ID:        s.currentParseID,
 			Status:    models.ParseStatusRunning,
-			StartedAt: time.Now(), // Would be tracked properly
+			StartedAt: s.parseStartTime, // Use the actual parse start time
 		}
 
 		status := models.NewParseStatusFromHistory(history)
@@ -447,6 +454,7 @@ func (s *VaultService) setParsingState(isParsing bool, parseID string) {
 	s.currentParseID = parseID
 	if !isParsing {
 		s.parseProgress = nil
+		s.parseStartTime = time.Time{} // Reset to zero value
 	}
 }
 

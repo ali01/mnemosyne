@@ -1,4 +1,6 @@
-// Package models defines data structures for the application
+// Package models defines data structures for the mnemosyne graph visualizer.
+// This file contains models for tracking vault parsing operations and providing
+// real-time progress updates to the frontend during large-scale parsing operations.
 package models
 
 import "time"
@@ -15,23 +17,43 @@ type ParseStatusResponse struct {
 
 // ParseProgress represents real-time progress of a parse operation
 type ParseProgress struct {
-	TotalFiles     int `json:"total_files"`
-	ProcessedFiles int `json:"processed_files"`
-	NodesCreated   int `json:"nodes_created"`
-	EdgesCreated   int `json:"edges_created"`
-	ErrorCount     int `json:"error_count"`
+	TotalFiles     int `json:"total_files,omitempty"`
+	ProcessedFiles int `json:"parsed_files,omitempty"`  // Match ParseStats naming
+	NodesCreated   int `json:"nodes_created,omitempty"`
+	EdgesCreated   int `json:"edges_created,omitempty"`
+	ErrorCount     int `json:"error_count,omitempty"`
+}
+
+// mapParseStatus safely converts internal ParseStatus constants to API response values
+func mapParseStatus(status ParseStatus) string {
+	// Map internal status to API response status with validation
+	switch status {
+	case ParseStatusIdle:
+		return "idle"
+	case ParseStatusPending:
+		return "pending"
+	case ParseStatusRunning:
+		return "running"
+	case ParseStatusCompleted:
+		return "completed"
+	case ParseStatusFailed:
+		return "failed"
+	default:
+		// Fallback to idle for unknown status to ensure type safety
+		return "idle"
+	}
 }
 
 // NewParseStatusFromHistory creates a ParseStatusResponse from ParseHistory
 func NewParseStatusFromHistory(history *ParseHistory) *ParseStatusResponse {
 	if history == nil {
 		return &ParseStatusResponse{
-			Status: string(ParseStatusIdle),
+			Status: mapParseStatus(ParseStatusIdle),
 		}
 	}
 
 	status := &ParseStatusResponse{
-		Status:      string(history.Status),
+		Status:      mapParseStatus(history.Status),
 		StartedAt:   &history.StartedAt,
 		CompletedAt: history.CompletedAt,
 	}

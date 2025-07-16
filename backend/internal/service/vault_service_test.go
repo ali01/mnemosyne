@@ -662,36 +662,86 @@ func TestGetLatestParseHistory(t *testing.T) {
 	assert.Equal(t, expectedHistory.Status, history.Status)
 }
 
-func TestGetVaultMetadata(t *testing.T) {
-	deps := setupMockDependencies(t)
+func TestGetVaultPath(t *testing.T) {
+	t.Run("success", func(t *testing.T) {
+		deps := setupMockDependencies(t)
 
-	expectedMetadata := &models.VaultMetadata{
-		Key:   "vault_path",
-		Value: "/path/to/vault",
-	}
-
-	deps.metadataRepo.getMetadataFunc = func(exec repository.Executor, ctx context.Context, key string) (*models.VaultMetadata, error) {
-		if key == "vault_path" {
-			return expectedMetadata, nil
+		expectedMetadata := &models.VaultMetadata{
+			Key:   "vault_path",
+			Value: "/path/to/vault",
 		}
-		return nil, errors.New("key not found")
-	}
 
-	vaultService := service.NewVaultService(
-		deps.config,
-		deps.gitManager,
-		deps.nodeService,
-		deps.edgeService,
-		deps.metadataService,
-		deps.db,
-	)
+		deps.metadataRepo.getMetadataFunc = func(exec repository.Executor, ctx context.Context, key string) (*models.VaultMetadata, error) {
+			if key == "vault_path" {
+				return expectedMetadata, nil
+			}
+			return nil, errors.New("key not found")
+		}
 
-	ctx := context.Background()
-	metadata, err := vaultService.GetVaultMetadata(ctx)
+		vaultService := service.NewVaultService(
+			deps.config,
+			deps.gitManager,
+			deps.nodeService,
+			deps.edgeService,
+			deps.metadataService,
+			deps.db,
+		)
 
-	require.NoError(t, err)
-	assert.Equal(t, expectedMetadata.Key, metadata.Key)
-	assert.Equal(t, expectedMetadata.Value, metadata.Value)
+		ctx := context.Background()
+		path, err := vaultService.GetVaultPath(ctx)
+
+		require.NoError(t, err)
+		assert.Equal(t, expectedMetadata.Value, path)
+	})
+
+	t.Run("metadata not found", func(t *testing.T) {
+		deps := setupMockDependencies(t)
+
+		deps.metadataRepo.getMetadataFunc = func(exec repository.Executor, ctx context.Context, key string) (*models.VaultMetadata, error) {
+			return nil, nil // Metadata not found
+		}
+
+		vaultService := service.NewVaultService(
+			deps.config,
+			deps.gitManager,
+			deps.nodeService,
+			deps.edgeService,
+			deps.metadataService,
+			deps.db,
+		)
+
+		ctx := context.Background()
+		path, err := vaultService.GetVaultPath(ctx)
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "vault path not found")
+		assert.Empty(t, path)
+	})
+
+	t.Run("metadata error", func(t *testing.T) {
+		deps := setupMockDependencies(t)
+
+		expectedErr := errors.New("database error")
+		deps.metadataRepo.getMetadataFunc = func(exec repository.Executor, ctx context.Context, key string) (*models.VaultMetadata, error) {
+			return nil, expectedErr
+		}
+
+		vaultService := service.NewVaultService(
+			deps.config,
+			deps.gitManager,
+			deps.nodeService,
+			deps.edgeService,
+			deps.metadataService,
+			deps.db,
+		)
+
+		ctx := context.Background()
+		path, err := vaultService.GetVaultPath(ctx)
+
+		require.Error(t, err)
+		assert.Equal(t, expectedErr, err)
+		assert.Empty(t, path)
+	})
 }
 
 // TestParserConfiguration tests that the parser is configured correctly

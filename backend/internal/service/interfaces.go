@@ -84,5 +84,5 @@ type VaultServiceInterface interface {
 	WaitForParse(ctx context.Context, timeout time.Duration) error
 
 	// Vault information
-	GetVaultMetadata(ctx context.Context) (*models.VaultMetadata, error)
+	GetVaultPath(ctx context.Context) (string, error)
 }

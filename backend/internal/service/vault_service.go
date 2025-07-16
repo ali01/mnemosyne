@@ -507,10 +507,17 @@ func (s *VaultService) WaitForParse(ctx context.Context, timeout time.Duration) 
 	}
 }
 
-// GetVaultMetadata retrieves vault metadata by key
-func (s *VaultService) GetVaultMetadata(ctx context.Context) (*models.VaultMetadata, error) {
+// GetVaultPath retrieves the vault path from metadata
+func (s *VaultService) GetVaultPath(ctx context.Context) (string, error) {
 	// Get the vault path metadata
-	return s.metadataService.GetMetadata(ctx, "vault_path")
+	metadata, err := s.metadataService.GetMetadata(ctx, "vault_path")
+	if err != nil {
+		return "", err
+	}
+	if metadata == nil {
+		return "", fmt.Errorf("vault path not found in metadata")
+	}
+	return metadata.Value, nil
 }
 
 // Helper methods

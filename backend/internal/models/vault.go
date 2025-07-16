@@ -73,6 +73,7 @@ type ParseHistory struct {
 type ParseStatus string
 
 const (
+	ParseStatusIdle      ParseStatus = "idle"      // No parse has been performed
 	ParseStatusPending   ParseStatus = "pending"
 	ParseStatusRunning   ParseStatus = "running"
 	ParseStatusCompleted ParseStatus = "completed"

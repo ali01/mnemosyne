@@ -6,7 +6,7 @@ import "time"
 // ParseStatusResponse represents the current status of a parse operation
 // This is used for API responses to check parsing progress
 type ParseStatusResponse struct {
-	Status      string         `json:"status"`                    // "idle", "parsing", "completed", "failed"
+	Status      string         `json:"status"`                    // "idle", "pending", "running", "completed", "failed"
 	StartedAt   *time.Time     `json:"started_at,omitempty"`
 	CompletedAt *time.Time     `json:"completed_at,omitempty"`
 	Progress    *ParseProgress `json:"progress,omitempty"`
@@ -26,7 +26,7 @@ type ParseProgress struct {
 func NewParseStatusFromHistory(history *ParseHistory) *ParseStatusResponse {
 	if history == nil {
 		return &ParseStatusResponse{
-			Status: "idle",
+			Status: string(ParseStatusIdle),
 		}
 	}
 

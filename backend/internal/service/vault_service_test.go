@@ -226,7 +226,7 @@ type mockMetadataRepository struct {
 	createParseRecordFunc func(exec repository.Executor, ctx context.Context, record *models.ParseHistory) error
 	getLatestParseFunc    func(exec repository.Executor, ctx context.Context) (*models.ParseHistory, error)
 	getParseByIDFunc      func(exec repository.Executor, ctx context.Context, id string) (*models.ParseHistory, error)
-	updateParseStatusFunc func(exec repository.Executor, ctx context.Context, id string, status models.ParseStatus) error
+	updateParseStatusFunc func(exec repository.Executor, ctx context.Context, id string, status models.ParseStatus, errorMsg *string) error
 	getParseHistoryFunc   func(exec repository.Executor, ctx context.Context, limit int) ([]models.ParseHistory, error)
 }
 
@@ -272,9 +272,9 @@ func (m *mockMetadataRepository) GetParseByID(exec repository.Executor, ctx cont
 	return nil, nil
 }
 
-func (m *mockMetadataRepository) UpdateParseStatus(exec repository.Executor, ctx context.Context, id string, status models.ParseStatus) error {
+func (m *mockMetadataRepository) UpdateParseStatus(exec repository.Executor, ctx context.Context, id string, status models.ParseStatus, errorMsg *string) error {
 	if m.updateParseStatusFunc != nil {
-		return m.updateParseStatusFunc(exec, ctx, id, status)
+		return m.updateParseStatusFunc(exec, ctx, id, status, errorMsg)
 	}
 	return nil
 }
@@ -313,7 +313,7 @@ func setupMockDependencies(t *testing.T) *mockDependencies {
 		createParseRecordFunc: func(exec repository.Executor, ctx context.Context, history *models.ParseHistory) error {
 			return nil
 		},
-		updateParseStatusFunc: func(exec repository.Executor, ctx context.Context, id string, status models.ParseStatus) error {
+		updateParseStatusFunc: func(exec repository.Executor, ctx context.Context, id string, status models.ParseStatus, errorMsg *string) error {
 			return nil
 		},
 		getLatestParseFunc: func(exec repository.Executor, ctx context.Context) (*models.ParseHistory, error) {
@@ -808,4 +808,292 @@ This links back to [[note1]].`,
 	}
 
 	return dir
+}
+
+// TestIsParseInProgress tests the IsParseInProgress method
+func TestIsParseInProgress(t *testing.T) {
+	tests := []struct {
+		name             string
+		simulateActive   bool
+		expectedProgress bool
+		expectedParseID  string
+		expectedError    error
+	}{
+		{
+			name:             "no active parse",
+			simulateActive:   false,
+			expectedProgress: false,
+			expectedParseID:  "",
+			expectedError:    nil,
+		},
+		{
+			name:             "active parse",
+			simulateActive:   true,
+			expectedProgress: true,
+			expectedParseID:  "test-parse-id", // Will be set during test
+			expectedError:    nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Skip if running in short mode
+			if testing.Short() && tt.simulateActive {
+				t.Skip("Skipping integration test")
+			}
+
+			// Use test containers for real database
+			tdb, _ := postgres.CreateTestRepositories(t)
+			defer tdb.Close()
+
+			ctx := context.Background()
+			require.NoError(t, tdb.CleanTables(ctx))
+
+			// Create test vault directory
+			testVaultDir := setupTestVault(t)
+			defer os.RemoveAll(testVaultDir)
+
+			// Create real services
+			nodeService := service.NewNodeService(tdb.DB)
+			edgeService := service.NewEdgeService(tdb.DB)
+			metadataService := service.NewMetadataService(tdb.DB)
+
+			// Create test config
+			cfg := &config.Config{
+				Graph: config.GraphConfig{
+					MaxConcurrency: 4,
+					BatchSize:      100,
+					NodeClassification: config.NodeClassificationConfig{
+						NodeTypes: map[string]config.NodeTypeConfig{
+							"note": {
+								DisplayName:    "Note",
+								Color:          "#3498db",
+								SizeMultiplier: 1.0,
+							},
+						},
+						ClassificationRules: []config.ClassificationRuleConfig{
+							{
+								Name:     "catch_all",
+								Priority: 100,
+								Type:     "regex",
+								Pattern:  ".*",
+								NodeType: "note",
+							},
+						},
+					},
+				},
+			}
+
+			// Create channels to coordinate the test
+			parseStarted := make(chan struct{})
+			parseCanFinish := make(chan struct{})
+			parseCompleted := make(chan string, 1)
+
+			// Create mock git manager
+			gitManager := &mockGitManager{
+				pullFunc: func(ctx context.Context) error {
+					if tt.simulateActive {
+						close(parseStarted)
+						<-parseCanFinish
+					}
+					return nil
+				},
+				getLocalPathFunc: func() string {
+					return testVaultDir
+				},
+			}
+
+			// Create vault service
+			vaultService := service.NewVaultService(
+				cfg,
+				gitManager,
+				nodeService,
+				edgeService,
+				metadataService,
+				tdb.DB,
+			)
+
+			if tt.simulateActive {
+				// Start parse in background
+				go func() {
+					parseCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+					defer cancel()
+					history, _ := vaultService.ParseAndIndexVault(parseCtx)
+					if history != nil {
+						parseCompleted <- history.ID
+					} else {
+						parseCompleted <- ""
+					}
+				}()
+
+				// Wait for parse to start
+				<-parseStarted
+				time.Sleep(100 * time.Millisecond)
+			}
+
+			// Test IsParseInProgress
+			inProgress, parseID, err := vaultService.IsParseInProgress(ctx)
+
+			// Validate results
+			assert.Equal(t, tt.expectedProgress, inProgress)
+			assert.Equal(t, tt.expectedError, err)
+
+			if tt.simulateActive {
+				assert.NotEmpty(t, parseID)
+				// Let parse complete
+				close(parseCanFinish)
+				<-parseCompleted
+			} else {
+				assert.Empty(t, parseID)
+			}
+		})
+	}
+}
+
+// TestWaitForParse tests the WaitForParse method
+func TestWaitForParse(t *testing.T) {
+	tests := []struct {
+		name          string
+		timeout       time.Duration
+		parseDelay    time.Duration
+		parseFails    bool
+		expectedError string
+	}{
+		{
+			name:          "successful parse completes before timeout",
+			timeout:       5 * time.Second,
+			parseDelay:    100 * time.Millisecond,
+			parseFails:    false,
+			expectedError: "",
+		},
+		{
+			name:          "timeout exceeded",
+			timeout:       100 * time.Millisecond,
+			parseDelay:    2 * time.Second,
+			parseFails:    false,
+			expectedError: "wait for parse timed out",
+		},
+		{
+			name:          "parse fails",
+			timeout:       5 * time.Second,
+			parseDelay:    100 * time.Millisecond,
+			parseFails:    true,
+			expectedError: "parse failed",
+		},
+		{
+			name:          "no active parse",
+			timeout:       1 * time.Second,
+			parseDelay:    0,
+			parseFails:    false,
+			expectedError: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Skip if running in short mode
+			if testing.Short() && tt.parseDelay > 0 {
+				t.Skip("Skipping integration test")
+			}
+
+			// Use test containers for real database
+			tdb, _ := postgres.CreateTestRepositories(t)
+			defer tdb.Close()
+
+			ctx := context.Background()
+			require.NoError(t, tdb.CleanTables(ctx))
+
+			// Create test vault directory
+			testVaultDir := setupTestVault(t)
+			defer os.RemoveAll(testVaultDir)
+
+			// Create real services
+			nodeService := service.NewNodeService(tdb.DB)
+			edgeService := service.NewEdgeService(tdb.DB)
+			metadataService := service.NewMetadataService(tdb.DB)
+
+			// Create test config
+			cfg := &config.Config{
+				Graph: config.GraphConfig{
+					MaxConcurrency: 4,
+					BatchSize:      100,
+					NodeClassification: config.NodeClassificationConfig{
+						NodeTypes: map[string]config.NodeTypeConfig{
+							"note": {
+								DisplayName:    "Note",
+								Color:          "#3498db",
+								SizeMultiplier: 1.0,
+							},
+						},
+						ClassificationRules: []config.ClassificationRuleConfig{
+							{
+								Name:     "catch_all",
+								Priority: 100,
+								Type:     "regex",
+								Pattern:  ".*",
+								NodeType: "note",
+							},
+						},
+					},
+				},
+			}
+
+			// Create mock git manager
+			gitManager := &mockGitManager{
+				pullFunc: func(ctx context.Context) error {
+					if tt.parseDelay > 0 {
+						time.Sleep(tt.parseDelay)
+					}
+					if tt.parseFails {
+						return errors.New("git pull failed")
+					}
+					return nil
+				},
+				getLocalPathFunc: func() string {
+					return testVaultDir
+				},
+			}
+
+			// Create vault service
+			vaultService := service.NewVaultService(
+				cfg,
+				gitManager,
+				nodeService,
+				edgeService,
+				metadataService,
+				tdb.DB,
+			)
+
+			if tt.parseDelay > 0 {
+				// Start parse in background
+				go func() {
+					parseCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+					defer cancel()
+					_, _ = vaultService.ParseAndIndexVault(parseCtx)
+				}()
+
+				// Give parse a moment to start
+				time.Sleep(50 * time.Millisecond)
+			}
+
+			// Test WaitForParse
+			err := vaultService.WaitForParse(ctx, tt.timeout)
+
+			// Debug: check parse status after wait
+			if tt.name == "parse fails" {
+				status, _ := vaultService.GetParseStatus(ctx)
+				if status != nil {
+					t.Logf("Parse status after wait: %s, error: %s", status.Status, status.Error)
+				}
+			}
+
+			// Validate results
+			if tt.expectedError != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.expectedError)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
 }

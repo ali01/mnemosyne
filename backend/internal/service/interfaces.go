@@ -3,6 +3,7 @@ package service
 
 import (
 	"context"
+	"time"
 
 	"github.com/ali01/mnemosyne/internal/models"
 	"github.com/ali01/mnemosyne/internal/repository"
@@ -64,8 +65,8 @@ type MetadataServiceInterface interface {
 	SetMetadata(ctx context.Context, metadata *models.VaultMetadata) error
 	SetMetadataTx(tx repository.Executor, ctx context.Context, metadata *models.VaultMetadata) error
 	GetAllMetadata(ctx context.Context) ([]models.VaultMetadata, error)
-	UpdateParseStatus(ctx context.Context, id string, status models.ParseStatus) error
-	UpdateParseStatusTx(tx repository.Executor, ctx context.Context, id string, status models.ParseStatus) error
+	UpdateParseStatus(ctx context.Context, id string, status models.ParseStatus, errorMsg *string) error
+	UpdateParseStatusTx(tx repository.Executor, ctx context.Context, id string, status models.ParseStatus, errorMsg *string) error
 }
 
 // VaultServiceInterface defines the interface for vault operations.
@@ -77,6 +78,10 @@ type VaultServiceInterface interface {
 	ParseAndIndexVault(ctx context.Context) (*models.ParseHistory, error)
 	GetParseStatus(ctx context.Context) (*models.ParseStatusResponse, error)
 	GetLatestParseHistory(ctx context.Context) (*models.ParseHistory, error)
+
+	// Parse state management
+	IsParseInProgress(ctx context.Context) (bool, string, error) // returns (inProgress, parseID, error)
+	WaitForParse(ctx context.Context, timeout time.Duration) error
 
 	// Vault information
 	GetVaultMetadata(ctx context.Context) (*models.VaultMetadata, error)

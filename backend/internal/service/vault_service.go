@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -151,8 +152,9 @@ func (s *VaultService) updateParseHistoryError(ctx context.Context, parseHistory
 	completedAt := time.Now()
 	parseHistory.CompletedAt = &completedAt
 
-	if updateErr := s.metadataService.UpdateParseStatus(ctx, parseHistory.ID, parseHistory.Status); updateErr != nil {
-		s.logger().Error("Failed to update parse history on error", "error", updateErr)
+	// Update the status and error message in one call
+	if updateErr := s.metadataService.UpdateParseStatus(ctx, parseHistory.ID, parseHistory.Status, &errorStr); updateErr != nil {
+		s.logger().Error("Failed to update parse status on error", "error", updateErr)
 	}
 }
 
@@ -387,7 +389,7 @@ func (s *VaultService) finalizeParseHistory(ctx context.Context, parseHistory *m
 	parseHistory.CompletedAt = &completedAt
 	parseHistory.Status = models.ParseStatusCompleted
 
-	if err := s.metadataService.UpdateParseStatus(ctx, parseHistory.ID, parseHistory.Status); err != nil {
+	if err := s.metadataService.UpdateParseStatus(ctx, parseHistory.ID, parseHistory.Status, nil); err != nil {
 		logger.Error("Failed to update parse status", "error", err)
 	}
 
@@ -430,6 +432,79 @@ func (s *VaultService) GetParseStatus(ctx context.Context) (*models.ParseStatusR
 // GetLatestParseHistory retrieves the most recent parse history record
 func (s *VaultService) GetLatestParseHistory(ctx context.Context) (*models.ParseHistory, error) {
 	return s.metadataService.GetLatestParse(ctx)
+}
+
+// IsParseInProgress checks if a parse operation is currently running
+// Returns (inProgress, parseID, error) where parseID is empty if no parse is running
+func (s *VaultService) IsParseInProgress(ctx context.Context) (bool, string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	return s.isParsing, s.currentParseID, nil
+}
+
+// WaitForParse waits for any active parse operation to complete or timeout
+// Returns nil if parse completes successfully, error if parse fails or timeout occurs
+func (s *VaultService) WaitForParse(ctx context.Context, timeout time.Duration) error {
+	// Create a timeout context
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	// Polling interval
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+
+	// Track the initial parse ID if there's one running
+	_, initialParseID, _ := s.IsParseInProgress(ctx)
+	hasSeenParse := initialParseID != ""
+
+	for {
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("wait for parse timed out after %v", timeout)
+		case <-ticker.C:
+			// Check if parse is still in progress
+			inProgress, currentParseID, err := s.IsParseInProgress(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to check parse progress: %w", err)
+			}
+
+			// Track if we've seen a parse running
+			if currentParseID != "" {
+				hasSeenParse = true
+			}
+
+			// If no parse is running, check the latest status
+			if !inProgress {
+				// If we never saw a parse running and there's no parse history, return success
+				if !hasSeenParse {
+					_, err := s.GetParseStatus(ctx)
+					if err != nil && strings.Contains(err.Error(), "not found") {
+						return nil
+					}
+				}
+
+				// Get the latest parse status
+				status, err := s.GetParseStatus(ctx)
+				if err != nil {
+					return fmt.Errorf("failed to get parse status: %w", err)
+				}
+
+				// Check if the last parse failed
+				if status.Status == "failed" && status.Error != "" {
+					return fmt.Errorf("parse failed: %s", status.Error)
+				}
+
+				// Parse completed successfully
+				return nil
+			}
+
+			// Log progress if parse is still running
+			if currentParseID != "" {
+				s.logger().Debug("Waiting for parse to complete", "parse_id", currentParseID)
+			}
+		}
+	}
 }
 
 // GetVaultMetadata retrieves vault metadata by key

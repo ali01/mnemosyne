@@ -68,12 +68,12 @@ func (s *MetadataService) GetParseHistory(ctx context.Context, limit int) ([]mod
 	return s.metadataRepo.GetParseHistory(s.db, ctx, limit)
 }
 
-// UpdateParseStatus updates the status of a parse record
-func (s *MetadataService) UpdateParseStatus(ctx context.Context, id string, status models.ParseStatus) error {
-	return s.metadataRepo.UpdateParseStatus(s.db, ctx, id, status)
+// UpdateParseStatus updates the status of a parse record, optionally with error message
+func (s *MetadataService) UpdateParseStatus(ctx context.Context, id string, status models.ParseStatus, errorMsg *string) error {
+	return s.metadataRepo.UpdateParseStatus(s.db, ctx, id, status, errorMsg)
 }
 
 // UpdateParseStatusTx updates the status of a parse record within a transaction
-func (s *MetadataService) UpdateParseStatusTx(tx repository.Executor, ctx context.Context, id string, status models.ParseStatus) error {
-	return s.metadataRepo.UpdateParseStatus(tx, ctx, id, status)
+func (s *MetadataService) UpdateParseStatusTx(tx repository.Executor, ctx context.Context, id string, status models.ParseStatus, errorMsg *string) error {
+	return s.metadataRepo.UpdateParseStatus(tx, ctx, id, status, errorMsg)
 }

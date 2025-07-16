@@ -42,7 +42,8 @@ func NewParseStatusFromHistory(history *ParseHistory) *ParseStatusResponse {
 	}
 
 	// Convert stats to progress if available
-	if history.Status == ParseStatusRunning && history.Stats != (JSONStats{}) {
+	// Progress should be available for all active parsing operations
+	if history.Status == ParseStatusRunning {
 		stats := history.Stats.ToParseStats()
 		status.Progress = &ParseProgress{
 			TotalFiles:     stats.TotalFiles,

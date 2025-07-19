@@ -165,9 +165,9 @@ func (s *MockPositionService) SetTestPosition(nodeID string, x, y, z float64, lo
 
 // Helper function for string search
 func contains(str, substr string) bool {
-	return len(str) > 0 && len(substr) > 0 && 
-		(str == substr || len(str) > len(substr) && 
-		 (str[:len(substr)] == substr || 
+	return len(str) > 0 && len(substr) > 0 &&
+		(str == substr || len(str) > len(substr) &&
+		 (str[:len(substr)] == substr ||
 		  contains(str[1:], substr)))
 }
 
@@ -179,13 +179,13 @@ type MockParseService struct {
 // NewMockParseService creates a new mock parse service
 func NewMockParseService() *MockParseService {
 	return &MockParseService{
-		status: "idle",
+		status: string(models.ParseStatusIdle),
 	}
 }
 
 // ParseVault simulates vault parsing
 func (s *MockParseService) ParseVault(ctx context.Context) error {
-	s.status = "parsing"
+	s.status = string(models.ParseStatusRunning)
 	return nil
 }
 

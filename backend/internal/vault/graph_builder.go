@@ -363,9 +363,9 @@ func (gb *GraphBuilder) createNode(file *MarkdownFile, id string) (*models.Vault
 	modifiedAt := file.GetModifiedAt()
 
 	// Build metadata map from frontmatter
-	var metadata map[string]interface{}
+	var metadata models.JSONMetadata
 	if file.Frontmatter != nil && file.Frontmatter.Raw != nil {
-		metadata = make(map[string]interface{})
+		metadata = make(models.JSONMetadata)
 		for k, v := range file.Frontmatter.Raw {
 			metadata[k] = v
 		}

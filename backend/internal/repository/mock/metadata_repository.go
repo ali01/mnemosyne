@@ -133,7 +133,7 @@ func (r *MetadataRepository) GetParseHistory(exec repository.Executor, ctx conte
 }
 
 // UpdateParseStatus updates the status of a parse record
-func (r *MetadataRepository) UpdateParseStatus(exec repository.Executor, ctx context.Context, id string, status models.ParseStatus) error {
+func (r *MetadataRepository) UpdateParseStatus(exec repository.Executor, ctx context.Context, id string, status models.ParseStatus, errorMsg *string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -143,6 +143,7 @@ func (r *MetadataRepository) UpdateParseStatus(exec repository.Executor, ctx con
 	}
 
 	record.Status = status
+	record.Error = errorMsg
 	if status == models.ParseStatusCompleted || status == models.ParseStatusFailed {
 		now := time.Now()
 		record.CompletedAt = &now

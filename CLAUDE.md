@@ -217,6 +217,7 @@ Multiple indexes on foreign keys, node types, tags, and full-text search
 ```
 
 ## Testing Strategy
+After making any changes to the codebase, make sure that all tests pass.
 
 ### Current Test Coverage
 - **Vault Parser**: 94% coverage ✓

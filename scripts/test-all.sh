@@ -217,6 +217,9 @@ total_skipped_tests=0
 if [ -f /tmp/backend_test_output ]; then
     # Count total skipped tests (including sub-tests)
     total_skipped_tests=$(grep -c -- "--- SKIP:" /tmp/backend_test_output 2>/dev/null || echo 0)
+    # Ensure it's a clean integer
+    total_skipped_tests=${total_skipped_tests//[^0-9]/}
+    total_skipped_tests=${total_skipped_tests:-0}
 
     # Get skipped test names
     while IFS= read -r test_name; do

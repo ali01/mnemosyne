@@ -32,7 +32,7 @@ func (s *JSONStats) Scan(value interface{}) error {
 
 // Value implements the driver.Valuer interface for database serialization
 func (s JSONStats) Value() (driver.Value, error) {
-	if s == (JSONStats{}) {
+	if s.IsEmpty() {
 		return nil, nil
 	}
 	return json.Marshal(s)
@@ -56,4 +56,11 @@ func (s *JSONStats) UnmarshalJSON(data []byte) error {
 // ToParseStats converts JSONStats back to ParseStats
 func (s JSONStats) ToParseStats() ParseStats {
 	return ParseStats(s)
+}
+
+// IsEmpty returns true if the JSONStats contains no data
+func (s JSONStats) IsEmpty() bool {
+	// Check if any meaningful data exists
+	return s.TotalFiles == 0 && s.ParsedFiles == 0 &&
+		s.TotalNodes == 0 && s.TotalEdges == 0
 }

@@ -9,9 +9,10 @@
 - The user should be able to move the nodes around to organize the graph. The positions of the nodes need to be saved so that they persist across sessions.
 - When a user clicks on a node representing a note, the visualizer will open a page with the rendered markdown of the note's contents.
 
-## Implementation Status
+CRITICAL: When you encounter a file reference (e.g., ROADMAP.md), use your Read tool to load it on a need-to-know basis. They're relevant to the SPECIFIC task at hand.
 
-⚠️ **IMPORTANT**: While core components are complete, they are NOT yet integrated. The API serves data from the database via service layer, but the parsing pipeline (Git → Parser → Database) is not connected.
+
+## Implementation Status
 
 For current implementation status and roadmap, see `ROADMAP.md`.
 
@@ -53,8 +54,6 @@ For current implementation status and roadmap, see `ROADMAP.md`.
 ## Commands
 
 ### Development Setup
-
-⚠️ **Note**: Backend currently serves sample data only. See `ROADMAP.md` for integration status and next steps.
 
 ```bash
 # Backend Setup

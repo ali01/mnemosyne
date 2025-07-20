@@ -16,9 +16,10 @@ vi.mock('$lib/stores/toast', () => {
 
 // Import after mocking
 import { toast } from '$lib/stores/toast';
+import type { Toast as ToastType } from '$lib/stores/toast';
 
 // Create a controllable store for the tests
-const mockToastStore = writable([]);
+const mockToastStore = writable<ToastType[]>([]);
 const mockRemove = vi.mocked(toast.remove);
 
 describe('Toast', () => {

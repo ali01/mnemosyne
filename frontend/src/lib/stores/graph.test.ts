@@ -81,6 +81,7 @@ describe('graph store', () => {
 				id: 'node1',
 				title: 'Test Node',
 				position: { x: 0, y: 0 },
+				level: 1,
 				metadata: { type: 'core' }
 			});
 
@@ -244,6 +245,7 @@ describe('graph store', () => {
 				id: 'existing',
 				title: 'Existing Node',
 				position: { x: 0, y: 0 },
+				level: 1,
 				metadata: { type: 'detail' }
 			});
 
@@ -279,6 +281,7 @@ describe('graph store', () => {
 				id: 'node1',
 				title: 'Old Title',
 				position: { x: 0, y: 0 },
+				level: 1,
 				metadata: { type: 'detail' }
 			});
 
@@ -307,7 +310,7 @@ describe('graph store', () => {
 			const node = updatedState.nodes.get('node1');
 			expect(node?.title).toBe('New Title');
 			expect(node?.position).toEqual({ x: 100, y: 100 });
-			expect(node?.metadata.type).toBe('core');
+			expect(node?.metadata?.type).toBe('core');
 		});
 
 		it('should include viewport parameters in API call', async () => {
@@ -445,11 +448,13 @@ describe('fetchWithRetry utility', () => {
 	});
 
 	it('should pass through request options', async () => {
-		let capturedRequest: Request | null = null;
+		let capturedMethod: string | undefined;
+		let capturedContentType: string | null | undefined;
 
 		server.use(
 			http.post('/test-endpoint', ({ request }) => {
-				capturedRequest = request;
+				capturedMethod = request.method;
+				capturedContentType = request.headers.get('Content-Type');
 				return HttpResponse.json({ success: true });
 			})
 		);
@@ -462,7 +467,7 @@ describe('fetchWithRetry utility', () => {
 
 		await fetchWithRetry('/test-endpoint', options);
 
-		expect(capturedRequest?.method).toBe('POST');
-		expect(capturedRequest?.headers.get('Content-Type')).toBe('application/json');
+		expect(capturedMethod).toBe('POST');
+		expect(capturedContentType).toBe('application/json');
 	});
 });

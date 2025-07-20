@@ -9,7 +9,7 @@ vi.mock('$lib/utils/debounce', () => ({
 }));
 
 // Mock fetch
-global.fetch = vi.fn();
+globalThis.fetch = vi.fn();
 
 describe('SearchBar', () => {
 	beforeEach(() => {

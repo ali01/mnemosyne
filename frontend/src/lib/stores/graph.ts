@@ -1,5 +1,6 @@
 import { writable } from 'svelte/store';
 import type { Node, Edge } from '$lib/types/graph';
+import { toast } from './toast';
 
 interface GraphState {
 	nodes: Map<string, Node>;
@@ -12,6 +13,7 @@ interface GraphState {
 		minY: number;
 		maxY: number;
 	};
+	savingNodes: Set<string>; // Track which nodes are being saved
 }
 
 function createGraphStore() {
@@ -25,7 +27,8 @@ function createGraphStore() {
 			maxX: 1000,
 			minY: -1000,
 			maxY: 1000
-		}
+		},
+		savingNodes: new Set()
 	});
 
 	return {
@@ -42,19 +45,43 @@ function createGraphStore() {
 			});
 		},
 		updateNodePosition: async (nodeId: string, position: { x: number; y: number }) => {
-			await fetch(`/api/v1/nodes/${nodeId}/position`, {
-				method: 'PUT',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify(position)
-			});
-			
+			// Mark node as saving
 			update(state => {
-				const node = state.nodes.get(nodeId);
-				if (node) {
-					node.position = position;
-				}
+				state.savingNodes.add(nodeId);
 				return state;
 			});
+			
+			try {
+				const response = await fetch(`/api/v1/nodes/${nodeId}/position`, {
+					method: 'PUT',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify(position)
+				});
+				
+				if (!response.ok) {
+					throw new Error(`Failed to save position: ${response.statusText}`);
+				}
+				
+				update(state => {
+					const node = state.nodes.get(nodeId);
+					if (node) {
+						node.position = position;
+					}
+					state.savingNodes.delete(nodeId);
+					return state;
+				});
+				
+				// Show success feedback briefly
+				toast.success('Position saved', 2000);
+			} catch (error) {
+				// Remove saving state on error
+				update(state => {
+					state.savingNodes.delete(nodeId);
+					return state;
+				});
+				toast.error('Failed to save node position. Please try again.');
+				console.error('Failed to update node position:', error);
+			}
 		},
 		selectNode: (nodeId: string | null) => {
 			update(state => {
@@ -66,3 +93,27 @@ function createGraphStore() {
 }
 
 export const graphStore = createGraphStore();
+
+// Helper function for retrying API calls
+export async function fetchWithRetry(
+	url: string,
+	options: RequestInit = {},
+	maxRetries = 3,
+	delay = 1000
+): Promise<Response> {
+	for (let i = 0; i < maxRetries; i++) {
+		try {
+			const response = await fetch(url, options);
+			if (!response.ok && i < maxRetries - 1 && response.status >= 500) {
+				// Retry on server errors
+				await new Promise(resolve => setTimeout(resolve, delay * (i + 1)));
+				continue;
+			}
+			return response;
+		} catch (error) {
+			if (i === maxRetries - 1) throw error;
+			await new Promise(resolve => setTimeout(resolve, delay * (i + 1)));
+		}
+	}
+	throw new Error('Failed to fetch after retries');
+}

@@ -25,6 +25,14 @@ For current implementation status and roadmap, see `ROADMAP.md`.
 - **Important**: Always verify current directory with `pwd` before running commands
 - **Preferred approach**: Use absolute paths or chain commands with `&&` to maintain directory context
 
+## Code Style Guidelines
+
+### Indentation
+- **Frontend (JavaScript/TypeScript/Svelte)**:
+  - Use 2 spaces for indentation. Do not use hard tabs.
+- **Backend (Go)**:
+  - Use tabs (Go standard)
+
 ## Architecture
 
 ### Backend (Go + Gin)

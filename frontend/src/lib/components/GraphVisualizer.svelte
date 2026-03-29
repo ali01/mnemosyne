@@ -49,10 +49,12 @@
         const sigmaModule = await import("sigma");
         const forceAtlas2Module = await import("graphology-layout-forceatlas2");
         const louvainModule = await import("graphology-communities-louvain");
+        const noverlapModule = await import("graphology-layout-noverlap");
         GraphConstructor = graphologyModule.default;
         SigmaConstructor = sigmaModule.default;
         const forceAtlas2 = forceAtlas2Module.default;
         const louvain = louvainModule.default;
+        const noverlap = noverlapModule.default;
 
         const graph = new GraphConstructor();
 
@@ -524,16 +526,20 @@
                     graph.setNodeAttribute(draggedNode, "highlighted", false);
 
                     if (hasDragged) {
-                        // Save dragged node + all affected neighbors in one batch
+                        // Run noverlap to resolve any overlaps caused by the drag
+                        noverlap.assign(graph, {
+                            maxIterations: 100,
+                            settings: {
+                                margin: 2,
+                                ratio: 1.5,
+                                speed: 3,
+                            },
+                        });
+
+                        // Save all node positions since noverlap may have adjusted any of them
                         const positions: { node_id: string; x: number; y: number }[] = [];
-                        const nodeData = graph.getNodeAttributes(draggedNode);
-                        if (nodeData.x !== undefined && nodeData.y !== undefined) {
-                            positions.push({ node_id: draggedNode, x: nodeData.x, y: nodeData.y });
-                        }
-                        graph.forEachNeighbor(draggedNode, (neighbor) => {
-                            const nx = graph.getNodeAttribute(neighbor, "x");
-                            const ny = graph.getNodeAttribute(neighbor, "y");
-                            positions.push({ node_id: neighbor, x: nx, y: ny });
+                        graph.forEachNode((node, attrs) => {
+                            positions.push({ node_id: node, x: attrs.x, y: attrs.y });
                         });
                         fetch("/api/v1/nodes/positions", {
                             method: "PUT",

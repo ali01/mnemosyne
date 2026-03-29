@@ -48,9 +48,11 @@
         const graphologyModule = await import("graphology");
         const sigmaModule = await import("sigma");
         const forceAtlas2Module = await import("graphology-layout-forceatlas2");
+        const louvainModule = await import("graphology-communities-louvain");
         GraphConstructor = graphologyModule.default;
         SigmaConstructor = sigmaModule.default;
         const forceAtlas2 = forceAtlas2Module.default;
+        const louvain = louvainModule.default;
 
         const graph = new GraphConstructor();
 
@@ -85,23 +87,123 @@
                 }
             });
 
-            // Run ForceAtlas2 layout if no saved positions
+            // Remove orphan nodes (no connections)
+            const orphans: string[] = [];
+            graph.forEachNode((node) => {
+                if (graph.degree(node) === 0) orphans.push(node);
+            });
+            orphans.forEach((node) => graph.dropNode(node));
+
+            // Detect communities with Louvain and assign colors
+            const communityPalette = [
+                "#7b8cff", "#ff6b6b", "#6bffb8", "#ffb86b", "#6bc5ff",
+                "#d46bff", "#ff6bb5", "#6bfff0", "#c8ff6b", "#ff916b",
+                "#8b6bff", "#6bff8b", "#ff6b6b", "#6bd4ff", "#ffe06b",
+                "#a06bff", "#ff6be0", "#6bffe0", "#ffaa6b", "#6b9fff",
+            ];
+            louvain.assign(graph, { resolution: 1.0 });
+            const communityColors = new Map<string, string>();
+            let colorIdx = 0;
+            graph.forEachNode((node, attrs) => {
+                const community = String(attrs.community);
+                if (!communityColors.has(community)) {
+                    communityColors.set(community, communityPalette[colorIdx % communityPalette.length]);
+                    colorIdx++;
+                }
+                graph.setNodeAttribute(node, "color", communityColors.get(community));
+                graph.setNodeAttribute(node, "communityColor", communityColors.get(community));
+            });
+
+            // Run layout if no saved positions
             const needsLayout = data.nodes.every(
                 (n: any) => n.position.x === 0 && n.position.y === 0,
             );
             if (needsLayout) {
-                forceAtlas2.assign(graph, {
+                // Two-level layout:
+                // 1. Build a meta-graph of communities and lay it out
+                // 2. Position each node near its community centroid
+                // 3. Run ForceAtlas2 locally within the seeded positions
+
+                // Group nodes by community
+                const communities = new Map<string, string[]>();
+                graph.forEachNode((node, attrs) => {
+                    const c = String(attrs.community);
+                    if (!communities.has(c)) communities.set(c, []);
+                    communities.get(c)!.push(node);
+                });
+
+                // Build a meta-graph: one node per community, edges weighted by inter-community connections
+                const metaGraph = new GraphConstructor();
+                for (const [cid, members] of communities) {
+                    metaGraph.addNode(cid, {
+                        x: (Math.random() - 0.5) * 100,
+                        y: (Math.random() - 0.5) * 100,
+                        size: Math.sqrt(members.length),
+                    });
+                }
+                graph.forEachEdge((_edge, _attrs, source, target) => {
+                    const sc = String(graph.getNodeAttribute(source, "community"));
+                    const tc = String(graph.getNodeAttribute(target, "community"));
+                    if (sc !== tc) {
+                        if (!metaGraph.hasEdge(sc, tc) && !metaGraph.hasEdge(tc, sc)) {
+                            metaGraph.addEdge(sc, tc, { weight: 1 });
+                        } else {
+                            const edgeKey = metaGraph.hasEdge(sc, tc)
+                                ? metaGraph.edge(sc, tc)
+                                : metaGraph.edge(tc, sc);
+                            if (edgeKey) {
+                                metaGraph.setEdgeAttribute(edgeKey, "weight",
+                                    metaGraph.getEdgeAttribute(edgeKey, "weight") + 1);
+                            }
+                        }
+                    }
+                });
+
+                // Lay out the meta-graph
+                forceAtlas2.assign(metaGraph, {
                     iterations: 300,
                     settings: {
-                        gravity: 0.02,
-                        scalingRatio: 20,
+                        gravity: 0.3,
+                        scalingRatio: 250,
+                        barnesHutOptimize: false,
+                        strongGravityMode: true,
+                        slowDown: 5,
+                    },
+                });
+
+                // Seed each node's position near its community centroid
+                for (const [cid, members] of communities) {
+                    const cx = metaGraph.getNodeAttribute(cid, "x");
+                    const cy = metaGraph.getNodeAttribute(cid, "y");
+                    const spread = Math.sqrt(members.length) * 6;
+                    for (const node of members) {
+                        graph.setNodeAttribute(node, "x", cx + (Math.random() - 0.5) * spread);
+                        graph.setNodeAttribute(node, "y", cy + (Math.random() - 0.5) * spread);
+                    }
+                }
+
+                // Set node sizes before ForceAtlas2 so adjustSizes repulsion works
+                graph.forEachNode((node) => {
+                    const degree = graph.degree(node);
+                    graph.setNodeAttribute(node, "size", 3 + Math.sqrt(degree) * 2);
+                });
+
+                // Run ForceAtlas2 on the full graph to refine within-community positions
+                // adjustSizes creates repulsion proportional to node size
+                forceAtlas2.assign(graph, {
+                    iterations: 600,
+                    settings: {
+                        gravity: 0.05,
+                        scalingRatio: 50,
                         barnesHutOptimize: true,
                         barnesHutTheta: 0.5,
                         strongGravityMode: false,
-                        slowDown: 8,
+                        slowDown: 10,
                         adjustSizes: true,
+                        linLogMode: true,
                     },
                 });
+
 
                 // Save computed positions to backend
                 const positions: { node_id: string; x: number; y: number }[] = [];
@@ -113,14 +215,14 @@
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify(positions),
                 }).catch((err) => console.error("Failed to save positions:", err));
+            } else {
+                // Still need to set sizes when loading saved positions
+                graph.forEachNode((node) => {
+                    const degree = graph.degree(node);
+                    const size = 3 + Math.sqrt(degree) * 2;
+                    graph.setNodeAttribute(node, "size", size);
+                });
             }
-
-            // Scale node sizes by degree
-            graph.forEachNode((node) => {
-                const degree = graph.degree(node);
-                const size = 1.5 + Math.sqrt(degree) * 1.5;
-                graph.setNodeAttribute(node, "size", size);
-            });
 
             nodeCount = graph.order;
             edgeCount = graph.size;
@@ -298,7 +400,7 @@
                             graph.setNodeAttribute(
                                 node,
                                 "color",
-                                getNodeColor(attributes.metadata?.type),
+                                attributes.communityColor || getNodeColor(attributes.metadata?.type),
                             );
                         }
                     });

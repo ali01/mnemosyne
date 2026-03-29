@@ -13,7 +13,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleGetGraph(w http.ResponseWriter, r *http.Request) {
-	graph, _, err := s.store.GetGraph()
+	graph, err := s.store.GetGraph()
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to fetch graph"})
 		return
@@ -48,6 +48,7 @@ func (s *Server) handleGetNodeContent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"title":    node.Title,
 		"content":  node.Content,
 		"metadata": node.Metadata,
 	})
@@ -135,8 +136,6 @@ func (s *Server) handleReindex(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"message": "Reindex completed"})
 }
 
-// --- Helpers ---
-
 func writeJSON(w http.ResponseWriter, status int, v interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
@@ -145,5 +144,6 @@ func writeJSON(w http.ResponseWriter, status int, v interface{}) {
 
 func readJSON(r *http.Request, v interface{}) error {
 	defer r.Body.Close()
+	r.Body = http.MaxBytesReader(nil, r.Body, 10<<20) // 10MB limit
 	return json.NewDecoder(r.Body).Decode(v)
 }

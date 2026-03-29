@@ -2,11 +2,14 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/ali01/mnemosyne/internal/api"
 	"github.com/ali01/mnemosyne/internal/config"
@@ -26,7 +29,6 @@ func main() {
 		log.Fatalf("Failed to load config: %v", err)
 	}
 
-	// Open database
 	s, err := store.New(cfg.DBPath)
 	if err != nil {
 		log.Fatalf("Failed to open database: %v", err)
@@ -34,18 +36,15 @@ func main() {
 	defer s.Close()
 	log.Printf("Database: %s", cfg.DBPath)
 
-	// Create indexer
 	idx, err := indexer.New(s, cfg.VaultPath, cfg.NodeClassification)
 	if err != nil {
 		log.Fatalf("Failed to create indexer: %v", err)
 	}
 
-	// Full index on startup
 	if err := idx.FullIndex(); err != nil {
 		log.Fatalf("Failed to index vault: %v", err)
 	}
 
-	// Start file watcher
 	w, err := watcher.New(idx, cfg.VaultPath)
 	if err != nil {
 		log.Fatalf("Failed to create watcher: %v", err)
@@ -55,24 +54,27 @@ func main() {
 	}
 	defer w.Stop()
 
-	// Start HTTP server with embedded frontend
 	srv := api.NewServer(s, idx, api.EmbeddedFS(), cfg.Port)
-
-	// Notify frontend when vault files change
 	w.SetOnChange(srv.NotifyChange)
 
-	// Graceful shutdown
+	httpServer := &http.Server{
+		Addr:    fmt.Sprintf(":%d", cfg.Port),
+		Handler: srv.Handler(),
+	}
+
+	// Graceful shutdown on signal
 	go func() {
 		sig := make(chan os.Signal, 1)
 		signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
 		<-sig
 		fmt.Println("\nShutting down...")
-		w.Stop()
-		s.Close()
-		os.Exit(0)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		httpServer.Shutdown(ctx)
 	}()
 
-	if err := srv.ListenAndServe(); err != nil {
+	log.Printf("Listening on http://localhost:%d", cfg.Port)
+	if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatalf("Server error: %v", err)
 	}
 }

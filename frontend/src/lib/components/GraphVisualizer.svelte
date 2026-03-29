@@ -1,7 +1,5 @@
 <script lang="ts">
     import { onMount, onDestroy, tick } from "svelte";
-    import { graphStore, fetchWithRetry } from "$lib/stores/graph";
-    import { debounce } from "$lib/utils/debounce";
     import { navigate } from "$lib/router";
     import { toast } from "$lib/stores/toast";
     import LoadingSpinner from "./LoadingSpinner.svelte";
@@ -12,44 +10,50 @@
     let sigma: SigmaType;
     let GraphConstructor: typeof Graph;
     let SigmaConstructor: typeof SigmaType;
-    let savingNodes = new Set<string>();
     let loading = true;
     let error = "";
-    let unsubscribe: (() => void) | null = null;
     let nodeCount = 0;
     let edgeCount = 0;
     let hoveredNode: string | null = null;
 
-    const debouncedUpdatePosition = debounce(
-        (nodeId: string, position: { x: number; y: number }) => {
-            fetch(`/api/v1/nodes/${encodeURIComponent(nodeId)}/position`, {
-                method: "PUT",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(position),
-            }).catch((err) => console.error("Failed to save position:", err));
-        },
-        300,
-    );
-
-    function getNodeColor(type: string): string {
-        switch (type) {
-            case "core":
-                return "#ff6b6b";
-            case "sub":
-                return "#6bc5ff";
-            case "detail":
-                return "#6bffb8";
-            default:
-                return "#7b8cff";
+    function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
+        const words = text.split(" ");
+        const lines: string[] = [];
+        let line = "";
+        for (const word of words) {
+            const testLine = line ? line + " " + word : word;
+            if (ctx.measureText(testLine).width > maxWidth && line) {
+                lines.push(line);
+                line = word;
+            } else {
+                line = testLine;
+            }
         }
+        lines.push(line);
+        return lines;
+    }
+
+    function saveAllPositions(graph: any) {
+        const positions: { node_id: string; x: number; y: number }[] = [];
+        graph.forEachNode((node: string, attrs: any) => {
+            positions.push({ node_id: node, x: attrs.x, y: attrs.y });
+        });
+        fetch("/api/v1/nodes/positions", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(positions),
+        }).catch((err) => console.error("Failed to save positions:", err));
     }
 
     onMount(async () => {
-        const graphologyModule = await import("graphology");
-        const sigmaModule = await import("sigma");
-        const forceAtlas2Module = await import("graphology-layout-forceatlas2");
-        const louvainModule = await import("graphology-communities-louvain");
-        const noverlapModule = await import("graphology-layout-noverlap");
+        const [graphologyModule, sigmaModule, forceAtlas2Module, louvainModule, noverlapModule] =
+            await Promise.all([
+                import("graphology"),
+                import("sigma"),
+                import("graphology-layout-forceatlas2"),
+                import("graphology-communities-louvain"),
+                import("graphology-layout-noverlap"),
+            ]);
         GraphConstructor = graphologyModule.default;
         SigmaConstructor = sigmaModule.default;
         const forceAtlas2 = forceAtlas2Module.default;
@@ -59,7 +63,7 @@
         const graph = new GraphConstructor();
 
         try {
-            const response = await fetchWithRetry("/api/v1/graph?level=0");
+            const response = await fetch("/api/v1/graph?level=0");
 
             if (!response.ok) {
                 throw new Error(`Failed to load graph: ${response.statusText}`);
@@ -74,7 +78,7 @@
                     y: hasPosition ? node.position.y : (Math.random() - 0.5) * 200,
                     size: 3,
                     label: node.title,
-                    color: getNodeColor(node.metadata?.type),
+                    color: "#7b8cff",
                     metadata: node.metadata,
                 });
             });
@@ -216,16 +220,7 @@
                 });
 
 
-                // Save computed positions to backend
-                const positions: { node_id: string; x: number; y: number }[] = [];
-                graph.forEachNode((node, attrs) => {
-                    positions.push({ node_id: node, x: attrs.x, y: attrs.y });
-                });
-                fetch("/api/v1/nodes/positions", {
-                    method: "PUT",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify(positions),
-                }).catch((err) => console.error("Failed to save positions:", err));
+                saveAllPositions(graph);
             } else {
                 // Still need to set sizes when loading saved positions
                 graph.forEachNode((node) => {
@@ -279,22 +274,11 @@
                 const maxWidth = 100;
                 const lineHeight = size * 1.2;
                 const x = data.x + data.size + 3;
-                const words = data.label.split(" ");
-                let line = "";
-                let lineIndex = 0;
+                const lines = wrapText(context, data.label, maxWidth);
                 const startY = data.y + size / 3;
-
-                for (let i = 0; i < words.length; i++) {
-                    const testLine = line ? line + " " + words[i] : words[i];
-                    if (context.measureText(testLine).width > maxWidth && line) {
-                        context.fillText(line, x, startY + lineIndex * lineHeight);
-                        line = words[i];
-                        lineIndex++;
-                    } else {
-                        line = testLine;
-                    }
+                for (let i = 0; i < lines.length; i++) {
+                    context.fillText(lines[i], x, startY + i * lineHeight);
                 }
-                context.fillText(line, x, startY + lineIndex * lineHeight);
             },
             defaultDrawNodeHover: (context: CanvasRenderingContext2D, data: any, settings: any) => {
                 const size = settings.labelSize;
@@ -310,20 +294,7 @@
                 const lineHeight = size * 1.2;
 
                 if (typeof data.label === "string") {
-                    // Wrap text into lines
-                    const words = data.label.split(" ");
-                    const lines: string[] = [];
-                    let line = "";
-                    for (const word of words) {
-                        const testLine = line ? line + " " + word : word;
-                        if (context.measureText(testLine).width > maxWidth && line) {
-                            lines.push(line);
-                            line = word;
-                        } else {
-                            line = testLine;
-                        }
-                    }
-                    lines.push(line);
+                    const lines = wrapText(context, data.label, maxWidth);
 
                     const textWidth = Math.min(maxWidth, Math.max(...lines.map((l) => context.measureText(l).width)));
                     const boxWidth = Math.round(textWidth + 8);
@@ -437,32 +408,6 @@
             sigma.refresh();
         });
 
-        // Subscribe to graph store for saving state
-        unsubscribe = graphStore.subscribe((state) => {
-            savingNodes = state.savingNodes;
-
-            if (sigma && sigma.getGraph) {
-                const graph = sigma.getGraph();
-                if (graph) {
-                    savingNodes.forEach((nodeId) => {
-                        if (graph.hasNode(nodeId)) {
-                            graph.setNodeAttribute(nodeId, "color", "#ffb347");
-                        }
-                    });
-
-                    graph.forEachNode((node, attributes) => {
-                        if (!savingNodes.has(node) && attributes.color === "#ffb347") {
-                            graph.setNodeAttribute(
-                                node,
-                                "color",
-                                attributes.communityColor || getNodeColor(attributes.metadata?.type),
-                            );
-                        }
-                    });
-                }
-            }
-        });
-
         // Node dragging state
         let draggedNode: string | null = null;
         let isDragging = false;
@@ -536,16 +481,7 @@
                             },
                         });
 
-                        // Save all node positions since noverlap may have adjusted any of them
-                        const positions: { node_id: string; x: number; y: number }[] = [];
-                        graph.forEachNode((node, attrs) => {
-                            positions.push({ node_id: node, x: attrs.x, y: attrs.y });
-                        });
-                        fetch("/api/v1/nodes/positions", {
-                            method: "PUT",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify(positions),
-                        }).catch((err) => console.error("Failed to save positions:", err));
+                        saveAllPositions(graph);
                     }
                 }
             }
@@ -561,7 +497,6 @@
 
     onDestroy(() => {
         if (sigma) sigma.kill();
-        if (unsubscribe) unsubscribe();
     });
 
     function handleZoomIn() {

@@ -4,7 +4,6 @@ package api
 import (
 	"fmt"
 	"io/fs"
-	"log"
 	"net/http"
 	"strings"
 	"sync"
@@ -53,14 +52,7 @@ func NewServer(s *store.Store, idx *indexer.Indexer, staticFS fs.FS, port int) *
 	return srv
 }
 
-// ListenAndServe starts the HTTP server.
-func (s *Server) ListenAndServe() error {
-	addr := fmt.Sprintf(":%d", s.port)
-	log.Printf("Listening on http://localhost:%d", s.port)
-	return http.ListenAndServe(addr, corsMiddleware(s.mux))
-}
-
-// Handler returns the http.Handler for testing.
+// Handler returns the http.Handler.
 func (s *Server) Handler() http.Handler {
 	return corsMiddleware(s.mux)
 }

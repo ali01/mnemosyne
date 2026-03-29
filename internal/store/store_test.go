@@ -539,10 +539,15 @@ func TestGetGraph(t *testing.T) {
 	require.NoError(t, s.UpsertEdge(&models.VaultEdge{ID: "e1", SourceID: "a", TargetID: "b", EdgeType: "wikilink", Weight: 1}))
 	require.NoError(t, s.UpsertPosition(&models.NodePosition{NodeID: "a", X: 10, Y: 20}))
 
-	graph, posMap, err := s.GetGraph()
+	graph, err := s.GetGraph()
 	require.NoError(t, err)
 	assert.Len(t, graph.Nodes, 2)
 	assert.Len(t, graph.Edges, 1)
-	assert.InDelta(t, 10, posMap["a"].X, 0.01)
+	// Check position was applied to the node
+	for _, n := range graph.Nodes {
+		if n.ID == "a" {
+			assert.InDelta(t, 10, n.Position.X, 0.01)
+		}
+	}
 	assert.Equal(t, "hub", graph.Nodes[0].Metadata["type"])
 }

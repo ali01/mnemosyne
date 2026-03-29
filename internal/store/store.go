@@ -55,12 +55,9 @@ func NewMemory() (*Store, error) {
 	return &Store{db: db}, nil
 }
 
-// Close closes the database connection.
 func (s *Store) Close() error {
 	return s.db.Close()
 }
-
-// --- Nodes ---
 
 // UpsertNode inserts or updates a node.
 func (s *Store) UpsertNode(n *models.VaultNode) error {
@@ -126,8 +123,6 @@ func (s *Store) SearchNodes(query string) ([]models.VaultNode, error) {
 	return scanNodes(rows)
 }
 
-// --- Edges ---
-
 // UpsertEdge inserts or updates an edge.
 func (s *Store) UpsertEdge(e *models.VaultEdge) error {
 	if e.ID == "" {
@@ -174,8 +169,6 @@ func (s *Store) DeleteEdgesByNode(nodeID string) error {
 	_, err := s.db.Exec(`DELETE FROM edges WHERE source_id = ? OR target_id = ?`, nodeID, nodeID)
 	return err
 }
-
-// --- Positions ---
 
 // GetAllPositions returns all saved node positions.
 func (s *Store) GetAllPositions() ([]models.NodePosition, error) {
@@ -232,23 +225,21 @@ func (s *Store) UpsertPositions(positions []models.NodePosition) error {
 	return tx.Commit()
 }
 
-// --- Graph (combined query for API) ---
-
 // GetGraph returns all nodes, edges, and positions for the graph API.
-func (s *Store) GetGraph() (*models.Graph, map[string]models.NodePosition, error) {
+func (s *Store) GetGraph() (*models.Graph, error) {
 	nodes, err := s.GetAllNodes()
 	if err != nil {
-		return nil, nil, fmt.Errorf("get nodes: %w", err)
+		return nil, fmt.Errorf("get nodes: %w", err)
 	}
 
 	edges, err := s.GetAllEdges()
 	if err != nil {
-		return nil, nil, fmt.Errorf("get edges: %w", err)
+		return nil, fmt.Errorf("get edges: %w", err)
 	}
 
 	positions, err := s.GetAllPositions()
 	if err != nil {
-		return nil, nil, fmt.Errorf("get positions: %w", err)
+		return nil, fmt.Errorf("get positions: %w", err)
 	}
 
 	posMap := make(map[string]models.NodePosition, len(positions))
@@ -279,10 +270,8 @@ func (s *Store) GetGraph() (*models.Graph, map[string]models.NodePosition, error
 		})
 	}
 
-	return &models.Graph{Nodes: apiNodes, Edges: apiEdges}, posMap, nil
+	return &models.Graph{Nodes: apiNodes, Edges: apiEdges}, nil
 }
-
-// --- Metadata ---
 
 // GetMetadata retrieves a metadata value by key.
 func (s *Store) GetMetadata(key string) (string, error) {
@@ -302,8 +291,6 @@ func (s *Store) SetMetadata(key, value string) error {
 	`, key, value)
 	return err
 }
-
-// --- Bulk operations ---
 
 // ReplaceAllNodesAndEdges atomically replaces all nodes and edges in a transaction.
 // Positions are preserved.
@@ -363,8 +350,6 @@ func (s *Store) ReplaceAllNodesAndEdges(nodes []models.VaultNode, edges []models
 
 	return tx.Commit()
 }
-
-// --- Helpers ---
 
 type nodeScanner interface {
 	Scan(dest ...any) error

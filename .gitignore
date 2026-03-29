@@ -49,3 +49,5 @@ mnemosyne
 internal/api/static/assets/
 frontend/dist/
 frontend/node_modules/
+.claude/settings.json
+.claude/settings.local.json

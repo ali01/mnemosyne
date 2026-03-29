@@ -16,6 +16,7 @@
   }
 
   let graphs: GraphEntry[] = [];
+  let homeGraph = '';
   let loaded = false;
   let eventSource: EventSource | null = null;
 
@@ -34,6 +35,7 @@
       const res = await fetch('/api/v1/graphs');
       const data = await res.json();
       graphs = data.graphs || [];
+      if (data.home_graph) homeGraph = data.home_graph;
     } catch (e) {
       console.error('Failed to fetch graphs:', e);
     }
@@ -44,7 +46,11 @@
     loaded = true;
 
     if ($route.type === 'home' && graphs.length > 0) {
-      navigate(graphUrl(graphs[0]));
+      if (homeGraph) {
+        navigate('/' + homeGraph);
+      } else {
+        navigate(graphUrl(graphs[0]));
+      }
     }
 
     // Listen for graph list changes (GRAPH.yaml added/removed)
@@ -54,9 +60,11 @@
       await fetchGraphs();
       const newGraphId = resolveGraphId($route, graphs);
 
-      // Current graph was deleted — redirect to first available or home
+      // Current graph was deleted — redirect to home graph, first available, or home
       if (oldGraphId != null && newGraphId == null) {
-        if (graphs.length > 0) {
+        if (homeGraph) {
+          navigate('/' + homeGraph);
+        } else if (graphs.length > 0) {
           navigate(graphUrl(graphs[0]));
         } else {
           navigate('/');

@@ -11,8 +11,9 @@ import (
 
 // Config holds all application configuration.
 type Config struct {
-	Port   int      `yaml:"port"`
-	Vaults []string `yaml:"vaults"`
+	Port      int      `yaml:"port"`
+	Vaults    []string `yaml:"vaults"`
+	HomeGraph string   `yaml:"home-graph,omitempty"` // e.g. "walros/memex"
 }
 
 // NodeClassificationConfig holds node type and classification rule configuration.

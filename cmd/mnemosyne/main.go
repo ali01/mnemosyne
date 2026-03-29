@@ -67,7 +67,7 @@ func main() {
 		watchers = append(watchers, w)
 	}
 
-	srv := api.NewServer(s, idx, api.EmbeddedFS(), cfg.Port)
+	srv := api.NewServer(s, idx, api.EmbeddedFS(), cfg.Port, cfg.HomeGraph)
 
 	// Start watchers with SSE notification
 	for _, w := range watchers {

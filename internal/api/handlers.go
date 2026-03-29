@@ -24,7 +24,11 @@ func (s *Server) handleListGraphs(w http.ResponseWriter, r *http.Request) {
 	if graphs == nil {
 		graphs = []models.GraphInfo{}
 	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{"graphs": graphs})
+	resp := map[string]interface{}{"graphs": graphs}
+	if s.homeGraph != "" {
+		resp["home_graph"] = s.homeGraph
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func (s *Server) handleGetGraphData(w http.ResponseWriter, r *http.Request) {

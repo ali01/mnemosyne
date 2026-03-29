@@ -1,44 +1,35 @@
-.PHONY: help dev-setup dev-backend dev-frontend dev build test clean
+.PHONY: help build build-frontend dev test clean
 
 help:
 	@echo "Available commands:"
-	@echo "  make dev-setup    - Install dependencies"
-	@echo "  make dev          - Run both backend and frontend in development mode"
-	@echo "  make dev-backend  - Run backend server"
-	@echo "  make dev-frontend - Run frontend development server"
-	@echo "  make build        - Build both backend and frontend for production"
-	@echo "  make test         - Run all tests"
-	@echo "  make clean        - Clean build artifacts"
+	@echo "  make build          - Build the mnemosyne binary (includes frontend)"
+	@echo "  make build-frontend - Build only the frontend"
+	@echo "  make dev            - Run frontend dev server + Go backend"
+	@echo "  make test           - Run all Go tests"
+	@echo "  make clean          - Clean build artifacts"
 
-dev-setup:
-	@echo "Setting up development environment..."
-	cd backend && go mod download
-	cd frontend && npm install
-	@echo "Setup complete! Run 'make dev' to start development servers"
+build-frontend:
+	cd frontend && npm install && npm run build
+
+build: build-frontend
+	rm -rf internal/api/static/*
+	cp -R frontend/dist/* internal/api/static/
+	go build -o mnemosyne ./cmd/mnemosyne
 
 dev:
-	@echo "Starting development servers..."
+	@echo "Starting dev servers..."
 	@make -j2 dev-backend dev-frontend
 
 dev-backend:
-	cd backend && go run cmd/server/main.go
+	go run ./cmd/mnemosyne
 
 dev-frontend:
 	cd frontend && npm run dev
 
-build:
-	@echo "Building backend..."
-	cd backend && go build -o ../dist/server cmd/server/main.go
-	@echo "Building frontend..."
-	cd frontend && npm run build
-
 test:
-	@echo "Running backend tests..."
-	cd backend && go test ./...
-	@echo "Running frontend tests..."
-	cd frontend && npm test
+	go test ./internal/... -count=1
 
 clean:
-	rm -rf dist/
-	rm -rf frontend/.svelte-kit/
-	rm -rf frontend/build/
+	rm -rf mnemosyne frontend/dist frontend/node_modules
+	rm -rf internal/api/static/*
+	echo '<!doctype html><html><body><p>Frontend not built.</p></body></html>' > internal/api/static/index.html

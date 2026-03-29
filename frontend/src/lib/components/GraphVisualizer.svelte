@@ -2,7 +2,7 @@
     import { onMount, onDestroy, tick } from "svelte";
     import { graphStore, fetchWithRetry } from "$lib/stores/graph";
     import { debounce } from "$lib/utils/debounce";
-    import { goto } from "$app/navigation";
+    import { navigate } from "$lib/router";
     import { toast } from "$lib/stores/toast";
     import LoadingSpinner from "./LoadingSpinner.svelte";
     import type { Sigma as SigmaType } from "sigma";
@@ -472,7 +472,7 @@
         sigma.on("clickNode", ({ node }) => {
             if (hasDragged) return;
             if (/^[a-zA-Z0-9_-]+$/.test(node)) {
-                goto(`/notes/${encodeURIComponent(node)}`);
+                navigate(`/notes/${encodeURIComponent(node)}`);
             } else {
                 console.error("Invalid node ID:", node);
                 toast.error("Unable to navigate to this node");

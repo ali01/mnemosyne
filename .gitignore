@@ -45,3 +45,7 @@ memex-clone/
 backend/data/memex-clone/
 backend/data/vault-clone/
 backend/data/*-clone/
+mnemosyne
+internal/api/static/assets/
+frontend/dist/
+frontend/node_modules/

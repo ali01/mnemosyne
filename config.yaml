@@ -1,4 +1,4 @@
-vault_path: ~/memex
+vault_path: ~/home/walros/
 port: 5555
 
 node_classification:

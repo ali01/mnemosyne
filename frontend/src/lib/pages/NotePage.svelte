@@ -5,6 +5,8 @@
   import { wikilinkExtension } from '$lib/utils/wikilink-renderer';
   import DOMPurify from 'isomorphic-dompurify';
 
+  export let graphId: number;
+  export let graphUrl: string = '/';
   export let id: string;
 
   const NODE_ID_PATTERN = /^[a-zA-Z0-9_-]+$/;
@@ -75,7 +77,7 @@
   });
 
   function handleBackToGraph() {
-    navigate('/');
+    navigate(graphUrl);
   }
 </script>
 

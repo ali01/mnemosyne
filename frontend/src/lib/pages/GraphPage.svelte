@@ -4,18 +4,31 @@
   import { navigate } from '$lib/router';
   import { onMount, onDestroy } from 'svelte';
 
+  export let graphId: number;
+  export let graphs: { id: number; vault_name: string; name: string; root_path: string }[] = [];
+  export let graphUrl: (g: any) => string;
+
   let mounted = false;
   let graphKey = 0;
   let eventSource: EventSource | null = null;
 
+  $: currentGraph = graphs.find(g => g.id === graphId);
+  $: graphName = currentGraph ? currentGraph.name : '';
+
   onMount(() => {
     mounted = true;
 
-    // Listen for vault changes via SSE
     eventSource = new EventSource('/api/v1/events');
-    eventSource.addEventListener('graph-updated', () => {
-      // Remount GraphVisualizer to reload data
-      graphKey++;
+    eventSource.addEventListener('graph-updated', (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        const affected = data.graphIds || data.GraphIDs || [];
+        if (affected.includes(graphId)) {
+          graphKey++;
+        }
+      } catch {
+        graphKey++;
+      }
     });
   });
 
@@ -28,18 +41,20 @@
 
   function handleSearchSelect(event: CustomEvent) {
     const node = event.detail;
+    if (!node?.id || !currentGraph) return;
+    navigate(`${graphUrl(currentGraph)}/notes/${node.id}`);
+  }
 
-    if (!node?.id) {
-      console.error('Invalid node selected:', node);
-      return;
-    }
-
-    navigate(`/notes/${node.id}`);
+  function switchGraph(event: Event) {
+    const select = event.currentTarget as HTMLSelectElement;
+    const id = parseInt(select.value);
+    const g = graphs.find(gr => gr.id === id);
+    if (g) navigate(graphUrl(g));
   }
 </script>
 
 <svelte:head>
-  <title>Mnemosyne</title>
+  <title>{graphName || 'Graph'} - Mnemosyne</title>
 </svelte:head>
 
 <main>
@@ -49,12 +64,21 @@
         <span class="brand-mark">M</span>
         <span class="brand-name">mnemosyne</span>
       </div>
+      {#if graphs.length > 1}
+        <select class="graph-selector" value={graphId} on:change={switchGraph}>
+          {#each graphs as g}
+            <option value={g.id}>{g.vault_name} / {g.name}</option>
+          {/each}
+        </select>
+      {:else if graphName}
+        <span class="graph-label">{graphName}</span>
+      {/if}
       <div class="search-area" role="search" aria-label="Search graph nodes">
-        <SearchBar on:select={handleSearchSelect} />
+        <SearchBar graphId={String(graphId)} on:select={handleSearchSelect} />
       </div>
     </div>
-    {#key graphKey}
-      <GraphVisualizer />
+    {#key `${graphId}-${graphKey}`}
+      <GraphVisualizer graphId={String(graphId)} />
     {/key}
   {/if}
 </main>
@@ -120,6 +144,28 @@
     color: var(--color-text-secondary);
     letter-spacing: 0.04em;
     text-transform: lowercase;
+  }
+
+  .graph-selector {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    color: var(--color-text-secondary);
+    font-family: var(--font-body);
+    font-size: 12px;
+    padding: 5px 8px;
+    cursor: pointer;
+  }
+
+  .graph-selector:focus {
+    outline: none;
+    border-color: var(--color-border-focus);
+  }
+
+  .graph-label {
+    font-size: 12px;
+    color: var(--color-text-muted);
+    font-family: var(--font-body);
   }
 
   .search-area {

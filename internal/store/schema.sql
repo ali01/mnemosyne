@@ -1,8 +1,16 @@
 -- Mnemosyne SQLite Schema
 
+CREATE TABLE IF NOT EXISTS vaults (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    path TEXT UNIQUE NOT NULL,
+    created_at TEXT DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS nodes (
     id TEXT PRIMARY KEY,
-    file_path TEXT UNIQUE NOT NULL,
+    vault_id INTEGER NOT NULL REFERENCES vaults(id) ON DELETE CASCADE,
+    file_path TEXT NOT NULL,
     title TEXT NOT NULL,
     content TEXT,
     frontmatter TEXT,          -- JSON object stored as text
@@ -12,7 +20,8 @@ CREATE TABLE IF NOT EXISTS nodes (
     out_degree INTEGER DEFAULT 0,
     created_at TEXT,
     updated_at TEXT,
-    parsed_at TEXT DEFAULT (datetime('now'))
+    parsed_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(vault_id, file_path)
 );
 
 CREATE TABLE IF NOT EXISTS edges (
@@ -26,13 +35,32 @@ CREATE TABLE IF NOT EXISTS edges (
     UNIQUE(source_id, target_id, edge_type)
 );
 
+CREATE TABLE IF NOT EXISTS graphs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    vault_id INTEGER NOT NULL REFERENCES vaults(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    root_path TEXT NOT NULL DEFAULT '',  -- relative to vault, '' for vault root
+    config TEXT,                          -- GRAPH.yaml contents as JSON
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(vault_id, root_path)
+);
+
+CREATE TABLE IF NOT EXISTS graph_nodes (
+    graph_id INTEGER NOT NULL REFERENCES graphs(id) ON DELETE CASCADE,
+    node_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
+    PRIMARY KEY (graph_id, node_id)
+);
+
 CREATE TABLE IF NOT EXISTS node_positions (
-    node_id TEXT PRIMARY KEY,
-    x REAL NOT NULL,
-    y REAL NOT NULL,
+    graph_id INTEGER NOT NULL REFERENCES graphs(id) ON DELETE CASCADE,
+    node_id TEXT NOT NULL,
+    x REAL NOT NULL DEFAULT 0,
+    y REAL NOT NULL DEFAULT 0,
     z REAL DEFAULT 0,
     locked INTEGER DEFAULT 0,
-    updated_at TEXT DEFAULT (datetime('now'))
+    updated_at TEXT DEFAULT (datetime('now')),
+    PRIMARY KEY (graph_id, node_id)
 );
 
 CREATE TABLE IF NOT EXISTS vault_metadata (
@@ -68,6 +96,7 @@ CREATE TRIGGER IF NOT EXISTS nodes_fts_update AFTER UPDATE ON nodes BEGIN
 END;
 
 -- Indexes
+CREATE INDEX IF NOT EXISTS idx_nodes_vault ON nodes(vault_id);
 CREATE INDEX IF NOT EXISTS idx_nodes_file_path ON nodes(file_path);
 CREATE INDEX IF NOT EXISTS idx_nodes_type ON nodes(node_type);
 CREATE INDEX IF NOT EXISTS idx_nodes_created_at ON nodes(created_at DESC);
@@ -76,3 +105,5 @@ CREATE INDEX IF NOT EXISTS idx_edges_source ON edges(source_id);
 CREATE INDEX IF NOT EXISTS idx_edges_target ON edges(target_id);
 CREATE INDEX IF NOT EXISTS idx_edges_source_target ON edges(source_id, target_id);
 CREATE INDEX IF NOT EXISTS idx_edges_type ON edges(edge_type);
+
+CREATE INDEX IF NOT EXISTS idx_graph_nodes_node ON graph_nodes(node_id);

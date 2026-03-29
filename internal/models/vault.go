@@ -10,6 +10,7 @@ import (
 // Bridge between file-centric parser output and node-centric graph visualization
 type VaultNode struct {
 	ID         string       `json:"id" db:"id" validate:"required,min=1"`                     // Required: from frontmatter
+	VaultID    int          `json:"vault_id" db:"vault_id"`                                   // Vault this node belongs to
 	Title      string       `json:"title" db:"title" validate:"required,min=1"`               // From frontmatter or filename fallback
 	NodeType   string       `json:"node_type" db:"node_type" validate:"omitempty,min=1"`      // Calculated node type from configuration
 	Tags       StringArray  `json:"tags,omitempty" db:"tags" validate:"omitempty,dive,min=1"` // From frontmatter tags field
@@ -36,8 +37,9 @@ type VaultEdge struct {
 }
 
 // NodePosition represents the position of a node in 3D space with persistence metadata
-// This extends the simple Position type with database-specific fields for tracking
+// Positions are scoped per-graph: each graph has independent node positions.
 type NodePosition struct {
+	GraphID   int       `db:"graph_id" json:"graph_id"`
 	NodeID    string    `db:"node_id" json:"node_id" validate:"required,min=1"`
 	X         float64   `db:"x" json:"x"`
 	Y         float64   `db:"y" json:"y"`
@@ -114,6 +116,25 @@ func (n *VaultNode) Validate() error {
 		return fmt.Errorf("node centrality must be between 0 and 1")
 	}
 	return nil
+}
+
+// Vault represents a registered vault directory.
+type Vault struct {
+	ID   int    `json:"id"`
+	Name string `json:"name"`
+	Path string `json:"path"`
+}
+
+// GraphInfo describes a graph (defined by a GRAPH.yaml marker file).
+type GraphInfo struct {
+	ID        int    `json:"id"`
+	VaultID   int    `json:"vault_id"`
+	VaultName string `json:"vault_name,omitempty"`
+	Name      string `json:"name"`
+	RootPath  string `json:"root_path"`
+	Config    string `json:"config,omitempty"`
+	NodeCount int    `json:"node_count,omitempty"`
+	EdgeCount int    `json:"edge_count,omitempty"`
 }
 
 // Validate performs validation on VaultEdge fields

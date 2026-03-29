@@ -39,13 +39,13 @@ func ProcessMarkdownFile(vaultPath, relativePath string) (*MarkdownFile, error) 
 	contentStr := string(content)
 
 	// Extract frontmatter
-	frontmatter, bodyContent, err := ExtractFrontmatter(contentStr)
+	frontmatter, _, err := ExtractFrontmatter(contentStr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to extract frontmatter from %s: %w", relativePath, err)
 	}
 
-	// Extract WikiLinks from body content (not frontmatter)
-	links := ExtractWikiLinks(bodyContent)
+	// Extract WikiLinks from full content (body + frontmatter)
+	links := ExtractWikiLinks(contentStr)
 
 	// Extract title from frontmatter or filename
 	title := extractTitle(relativePath, frontmatter)
@@ -70,13 +70,13 @@ func ProcessMarkdownReader(reader io.Reader, path string) (*MarkdownFile, error)
 	contentStr := string(content)
 
 	// Extract frontmatter
-	frontmatter, bodyContent, err := ExtractFrontmatter(contentStr)
+	frontmatter, _, err := ExtractFrontmatter(contentStr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to extract frontmatter: %w", err)
 	}
 
-	// Extract WikiLinks
-	links := ExtractWikiLinks(bodyContent)
+	// Extract WikiLinks from full content (body + frontmatter)
+	links := ExtractWikiLinks(contentStr)
 
 	// Extract title from frontmatter or path
 	title := extractTitle(path, frontmatter)

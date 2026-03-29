@@ -13,10 +13,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func setupTestVault(t *testing.T) (string, *store.Store, *indexer.Indexer) {
+func setupTestVault(t *testing.T) (string, *store.Store, *indexer.IndexManager, int, []int) {
 	t.Helper()
 	dir := t.TempDir()
 
+	writeFile(t, filepath.Join(dir, "GRAPH.yaml"), "")
 	writeFile(t, filepath.Join(dir, "note-a.md"), `---
 id: "a"
 ---
@@ -27,44 +28,42 @@ id: "a"
 	require.NoError(t, err)
 	t.Cleanup(func() { s.Close() })
 
-	idx, err := indexer.New(s, dir, nil)
+	m := indexer.NewIndexManager(s)
+	vaultID, graphIDs, err := m.RegisterVault(dir)
 	require.NoError(t, err)
+	require.NoError(t, m.FullIndexVault(vaultID))
 
-	require.NoError(t, idx.FullIndex())
-	return dir, s, idx
+	return dir, s, m, vaultID, graphIDs
 }
 
 func TestWatcherDetectsNewFile(t *testing.T) {
-	dir, s, idx := setupTestVault(t)
+	dir, s, m, vaultID, graphIDs := setupTestVault(t)
 
-	w, err := New(idx, dir)
+	w, err := New(m, vaultID, dir)
 	require.NoError(t, err)
 	require.NoError(t, w.Start())
 	defer w.Stop()
 
-	// Create a new file
 	writeFile(t, filepath.Join(dir, "note-b.md"), `---
 id: "b"
 ---
 # Note B
 `)
 
-	// Wait for debounce + processing
 	assert.Eventually(t, func() bool {
-		nodes, _ := s.GetAllNodes()
-		return len(nodes) == 2
+		g, _ := s.GetGraphData(graphIDs[0])
+		return len(g.Nodes) == 2
 	}, 3*time.Second, 100*time.Millisecond, "expected 2 nodes after adding a file")
 }
 
 func TestWatcherDetectsFileModification(t *testing.T) {
-	dir, s, idx := setupTestVault(t)
+	dir, s, m, vaultID, _ := setupTestVault(t)
 
-	w, err := New(idx, dir)
+	w, err := New(m, vaultID, dir)
 	require.NoError(t, err)
 	require.NoError(t, w.Start())
 	defer w.Stop()
 
-	// Modify existing file
 	writeFile(t, filepath.Join(dir, "note-a.md"), `---
 id: "a"
 ---
@@ -72,7 +71,6 @@ id: "a"
 New content here.
 `)
 
-	// Wait for debounce + processing
 	assert.Eventually(t, func() bool {
 		node, err := s.GetNode("a")
 		if err != nil {
@@ -83,7 +81,7 @@ New content here.
 }
 
 func TestWatcherDetectsFileDeletion(t *testing.T) {
-	dir, s, idx := setupTestVault(t)
+	dir, s, m, vaultID, graphIDs := setupTestVault(t)
 
 	// Add a second file before starting the watcher
 	writeFile(t, filepath.Join(dir, "note-b.md"), `---
@@ -91,51 +89,47 @@ id: "b"
 ---
 # Note B
 `)
-	require.NoError(t, idx.FullIndex())
+	require.NoError(t, m.FullIndexVault(vaultID))
 
-	nodes, _ := s.GetAllNodes()
-	require.Len(t, nodes, 2)
+	g, _ := s.GetGraphData(graphIDs[0])
+	require.Len(t, g.Nodes, 2)
 
-	w, err := New(idx, dir)
+	w, err := New(m, vaultID, dir)
 	require.NoError(t, err)
 	require.NoError(t, w.Start())
 	defer w.Stop()
 
-	// Delete the file
 	require.NoError(t, os.Remove(filepath.Join(dir, "note-b.md")))
 
 	assert.Eventually(t, func() bool {
-		nodes, _ := s.GetAllNodes()
-		return len(nodes) == 1
+		g, _ := s.GetGraphData(graphIDs[0])
+		return len(g.Nodes) == 1
 	}, 10*time.Second, 200*time.Millisecond, "expected 1 node after deleting a file")
 }
 
 func TestWatcherIgnoresNonMarkdown(t *testing.T) {
-	dir, s, idx := setupTestVault(t)
+	dir, s, m, vaultID, graphIDs := setupTestVault(t)
 
-	w, err := New(idx, dir)
+	w, err := New(m, vaultID, dir)
 	require.NoError(t, err)
 	require.NoError(t, w.Start())
 	defer w.Stop()
 
-	// Create a non-markdown file
 	writeFile(t, filepath.Join(dir, "image.png"), "not markdown")
 
-	// Wait a bit, then check nothing changed
 	time.Sleep(1 * time.Second)
-	nodes, _ := s.GetAllNodes()
-	assert.Len(t, nodes, 1, "non-markdown files should not trigger indexing")
+	g, _ := s.GetGraphData(graphIDs[0])
+	assert.Len(t, g.Nodes, 1, "non-markdown files should not trigger indexing")
 }
 
 func TestWatcherDebouncesBatchChanges(t *testing.T) {
-	dir, s, idx := setupTestVault(t)
+	dir, s, m, vaultID, graphIDs := setupTestVault(t)
 
-	w, err := New(idx, dir)
+	w, err := New(m, vaultID, dir)
 	require.NoError(t, err)
 	require.NoError(t, w.Start())
 	defer w.Stop()
 
-	// Rapidly create multiple files
 	for i := 0; i < 5; i++ {
 		writeFile(t, filepath.Join(dir, fmt.Sprintf("rapid-%d.md", i)), fmt.Sprintf(`---
 id: "r%d"
@@ -145,34 +139,30 @@ id: "r%d"
 	}
 
 	assert.Eventually(t, func() bool {
-		nodes, _ := s.GetAllNodes()
-		return len(nodes) == 6 // 1 original + 5 new
+		g, _ := s.GetGraphData(graphIDs[0])
+		return len(g.Nodes) == 6
 	}, 5*time.Second, 100*time.Millisecond, "expected 6 nodes after batch creation")
 }
 
 func TestWatcherStartStop(t *testing.T) {
-	dir, _, idx := setupTestVault(t)
+	dir, _, m, vaultID, _ := setupTestVault(t)
 
-	w, err := New(idx, dir)
+	w, err := New(m, vaultID, dir)
 	require.NoError(t, err)
 	require.NoError(t, w.Start())
 	w.Stop()
-	// Should not panic or hang
 }
 
 func TestWatcherNewSubdirectory(t *testing.T) {
-	dir, s, idx := setupTestVault(t)
+	dir, s, m, vaultID, graphIDs := setupTestVault(t)
 
-	w, err := New(idx, dir)
+	w, err := New(m, vaultID, dir)
 	require.NoError(t, err)
 	require.NoError(t, w.Start())
 	defer w.Stop()
 
-	// Create a subdirectory with a file
 	subdir := filepath.Join(dir, "subdir")
 	os.MkdirAll(subdir, 0o755)
-
-	// Small delay for the dir watcher to register
 	time.Sleep(200 * time.Millisecond)
 
 	writeFile(t, filepath.Join(subdir, "sub-note.md"), `---
@@ -182,9 +172,36 @@ id: "sub"
 `)
 
 	assert.Eventually(t, func() bool {
-		nodes, _ := s.GetAllNodes()
-		return len(nodes) == 2
+		g, _ := s.GetGraphData(graphIDs[0])
+		return len(g.Nodes) == 2
 	}, 3*time.Second, 100*time.Millisecond, "expected 2 nodes after adding file in subdirectory")
+}
+
+func TestWatcherOnChangeReceivesGraphIDs(t *testing.T) {
+	dir, _, m, vaultID, graphIDs := setupTestVault(t)
+
+	w, err := New(m, vaultID, dir)
+	require.NoError(t, err)
+
+	var receivedIDs []int
+	w.SetOnChange(func(ids []int) {
+		receivedIDs = ids
+	})
+
+	require.NoError(t, w.Start())
+	defer w.Stop()
+
+	writeFile(t, filepath.Join(dir, "note-c.md"), `---
+id: "c"
+---
+# Note C
+`)
+
+	assert.Eventually(t, func() bool {
+		return len(receivedIDs) > 0
+	}, 3*time.Second, 100*time.Millisecond, "expected onChange to be called with graph IDs")
+
+	assert.Contains(t, receivedIDs, graphIDs[0])
 }
 
 func writeFile(t *testing.T, path, content string) {

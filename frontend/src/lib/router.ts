@@ -1,25 +1,37 @@
 import { writable } from 'svelte/store';
 
-interface Route {
-  path: string;
-  params: Record<string, string>;
+export interface Route {
+  type: 'home' | 'graph' | 'note';
+  vaultName?: string;
+  graphPath?: string;
+  noteId?: string;
 }
 
-function parseHash(): Route {
-  const hash = window.location.hash.slice(1) || '/';
-  const noteMatch = hash.match(/^\/notes\/([^/]+)$/);
+function parsePath(): Route {
+  const path = window.location.pathname;
+
+  // /vaultName/graphPath/notes/nodeId
+  const noteMatch = path.match(/^\/([^/]+)\/([^/]+)\/notes\/([^/]+)$/);
   if (noteMatch) {
-    return { path: '/notes/:id', params: { id: noteMatch[1] } };
+    return { type: 'note', vaultName: decodeURIComponent(noteMatch[1]), graphPath: decodeURIComponent(noteMatch[2]), noteId: noteMatch[3] };
   }
-  return { path: '/', params: {} };
+
+  // /vaultName/graphPath
+  const graphMatch = path.match(/^\/([^/]+)\/([^/]+)$/);
+  if (graphMatch) {
+    return { type: 'graph', vaultName: decodeURIComponent(graphMatch[1]), graphPath: decodeURIComponent(graphMatch[2]) };
+  }
+
+  return { type: 'home' };
 }
 
-export const route = writable<Route>(parseHash());
+export const route = writable<Route>(parsePath());
 
-window.addEventListener('hashchange', () => {
-  route.set(parseHash());
+window.addEventListener('popstate', () => {
+  route.set(parsePath());
 });
 
 export function navigate(path: string) {
-  window.location.hash = path;
+  window.history.pushState(null, '', path);
+  route.set(parsePath());
 }

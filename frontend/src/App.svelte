@@ -1,16 +1,94 @@
 <script lang="ts">
-  import { route } from '$lib/router';
+  import { route, navigate } from '$lib/router';
+  import type { Route } from '$lib/router';
   import Toast from '$lib/components/Toast.svelte';
   import ErrorBoundary from '$lib/components/ErrorBoundary.svelte';
   import GraphPage from '$lib/pages/GraphPage.svelte';
   import NotePage from '$lib/pages/NotePage.svelte';
+  import GraphListPage from '$lib/pages/GraphListPage.svelte';
+  import { onMount, onDestroy } from 'svelte';
+
+  interface GraphEntry {
+    id: number;
+    vault_name: string;
+    name: string;
+    root_path: string;
+  }
+
+  let graphs: GraphEntry[] = [];
+  let loaded = false;
+  let eventSource: EventSource | null = null;
+
+  function resolveGraphId(r: Route, graphList: GraphEntry[]): number | null {
+    if (r.type !== 'graph' && r.type !== 'note') return null;
+    const match = graphList.find(g => g.vault_name === r.vaultName && g.root_path === r.graphPath);
+    return match ? match.id : null;
+  }
+
+  function graphUrl(g: GraphEntry): string {
+    return `/${encodeURIComponent(g.vault_name)}/${encodeURIComponent(g.root_path)}`;
+  }
+
+  async function fetchGraphs() {
+    try {
+      const res = await fetch('/api/v1/graphs');
+      const data = await res.json();
+      graphs = data.graphs || [];
+    } catch (e) {
+      console.error('Failed to fetch graphs:', e);
+    }
+  }
+
+  onMount(async () => {
+    await fetchGraphs();
+    loaded = true;
+
+    if ($route.type === 'home' && graphs.length > 0) {
+      navigate(graphUrl(graphs[0]));
+    }
+
+    // Listen for graph list changes (GRAPH.yaml added/removed)
+    eventSource = new EventSource('/api/v1/events');
+    eventSource.addEventListener('graphs-changed', async () => {
+      const oldGraphId = resolveGraphId($route, graphs);
+      await fetchGraphs();
+      const newGraphId = resolveGraphId($route, graphs);
+
+      // Current graph was deleted — redirect to first available or home
+      if (oldGraphId != null && newGraphId == null) {
+        if (graphs.length > 0) {
+          navigate(graphUrl(graphs[0]));
+        } else {
+          navigate('/');
+        }
+      }
+    });
+  });
+
+  onDestroy(() => {
+    if (eventSource) {
+      eventSource.close();
+      eventSource = null;
+    }
+  });
+
+  $: graphId = resolveGraphId($route, graphs);
+  $: currentGraph = graphId != null ? graphs.find(g => g.id === graphId) : null;
 </script>
 
 <Toast />
 <ErrorBoundary>
-  {#if $route.path === '/notes/:id'}
-    <NotePage id={$route.params.id} />
-  {:else}
-    <GraphPage />
+  {#if loaded}
+    {#if $route.type === 'note' && graphId != null}
+      <NotePage
+        graphId={graphId}
+        graphUrl={currentGraph ? graphUrl(currentGraph) : '/'}
+        id={$route.noteId || ''}
+      />
+    {:else if $route.type === 'graph' && graphId != null}
+      <GraphPage {graphId} {graphs} {graphUrl} />
+    {:else}
+      <GraphListPage {graphs} {graphUrl} />
+    {/if}
   {/if}
 </ErrorBoundary>

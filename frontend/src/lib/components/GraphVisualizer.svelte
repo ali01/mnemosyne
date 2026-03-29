@@ -6,6 +6,8 @@
     import type { Sigma as SigmaType } from "sigma";
     import type Graph from "graphology";
 
+    export let graphId: string = '';
+
     let container: HTMLDivElement;
     let sigma: SigmaType;
     let GraphConstructor: typeof Graph;
@@ -38,7 +40,8 @@
         graph.forEachNode((node: string, attrs: any) => {
             positions.push({ node_id: node, x: attrs.x, y: attrs.y });
         });
-        fetch("/api/v1/nodes/positions", {
+        const posUrl = graphId ? `/api/v1/graphs/${graphId}/positions` : '/api/v1/graphs/0/positions';
+        fetch(posUrl, {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(positions),
@@ -60,10 +63,11 @@
         const louvain = louvainModule.default;
         const noverlap = noverlapModule.default;
 
-        const graph = new GraphConstructor();
+        const graph = new GraphConstructor({ type: "undirected" });
 
         try {
-            const response = await fetch("/api/v1/graph?level=0");
+            const graphUrl = graphId ? `/api/v1/graphs/${graphId}` : '/api/v1/graphs/0';
+            const response = await fetch(graphUrl);
 
             if (!response.ok) {
                 throw new Error(`Failed to load graph: ${response.statusText}`);
@@ -245,6 +249,8 @@
             loading = false;
             return;
         }
+
+        if (!container) return;
 
         sigma = new SigmaConstructor(graph, container, {
             renderLabels: true,

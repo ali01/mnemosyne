@@ -13,238 +13,273 @@ import (
 
 const sampleVault = "testdata/sample_vault"
 
-func newTestIndexer(t *testing.T) (*Indexer, *store.Store) {
+func newTestManager(t *testing.T) (*IndexManager, *store.Store) {
 	t.Helper()
 	s, err := store.NewMemory()
 	require.NoError(t, err)
 	t.Cleanup(func() { s.Close() })
-
-	idx, err := New(s, sampleVault, nil)
-	require.NoError(t, err)
-	return idx, s
+	return NewIndexManager(s), s
 }
 
-func TestFullIndex(t *testing.T) {
-	idx, s := newTestIndexer(t)
+func TestRegisterVault(t *testing.T) {
+	m, _ := newTestManager(t)
 
-	err := idx.FullIndex()
-	require.NoError(t, err)
+	// Add GRAPH.yaml to sample vault for discovery
+	dir := t.TempDir()
+	copyVault(t, sampleVault, dir)
+	writeFile(t, filepath.Join(dir, "GRAPH.yaml"), "")
 
-	nodes, err := s.GetAllNodes()
+	vaultID, graphIDs, err := m.RegisterVault(dir)
 	require.NoError(t, err)
-	assert.Greater(t, len(nodes), 0, "should have indexed some nodes")
-
-	edges, err := s.GetAllEdges()
-	require.NoError(t, err)
-	// The sample vault has inter-linked files, so we expect some edges
-	t.Logf("Indexed %d nodes, %d edges", len(nodes), len(edges))
-
-	// Verify metadata was set
-	lastIndex, err := s.GetMetadata("last_index")
-	require.NoError(t, err)
-	assert.NotEmpty(t, lastIndex)
+	assert.Greater(t, vaultID, 0)
+	assert.Len(t, graphIDs, 1)
 }
 
-func TestFullIndexIdempotent(t *testing.T) {
-	idx, s := newTestIndexer(t)
+func TestFullIndexVault(t *testing.T) {
+	m, s := newTestManager(t)
 
-	require.NoError(t, idx.FullIndex())
-	nodes1, _ := s.GetAllNodes()
+	dir := t.TempDir()
+	copyVault(t, sampleVault, dir)
+	writeFile(t, filepath.Join(dir, "GRAPH.yaml"), "")
 
-	require.NoError(t, idx.FullIndex())
-	nodes2, _ := s.GetAllNodes()
+	vaultID, graphIDs, err := m.RegisterVault(dir)
+	require.NoError(t, err)
 
-	assert.Equal(t, len(nodes1), len(nodes2), "re-indexing should produce same node count")
+	require.NoError(t, m.FullIndexVault(vaultID))
+
+	graph, err := s.GetGraphData(graphIDs[0])
+	require.NoError(t, err)
+	assert.Greater(t, len(graph.Nodes), 0)
+	t.Logf("Indexed %d nodes, %d edges", len(graph.Nodes), len(graph.Edges))
+}
+
+func TestFullIndexVaultIdempotent(t *testing.T) {
+	m, s := newTestManager(t)
+
+	dir := t.TempDir()
+	copyVault(t, sampleVault, dir)
+	writeFile(t, filepath.Join(dir, "GRAPH.yaml"), "")
+
+	vaultID, graphIDs, _ := m.RegisterVault(dir)
+	require.NoError(t, m.FullIndexVault(vaultID))
+
+	g1, _ := s.GetGraphData(graphIDs[0])
+	count1 := len(g1.Nodes)
+
+	require.NoError(t, m.FullIndexVault(vaultID))
+	g2, _ := s.GetGraphData(graphIDs[0])
+	assert.Equal(t, count1, len(g2.Nodes))
 }
 
 func TestFullIndexPreservesPositions(t *testing.T) {
-	idx, s := newTestIndexer(t)
-	require.NoError(t, idx.FullIndex())
+	m, s := newTestManager(t)
 
-	nodes, _ := s.GetAllNodes()
-	require.Greater(t, len(nodes), 0)
+	dir := t.TempDir()
+	copyVault(t, sampleVault, dir)
+	writeFile(t, filepath.Join(dir, "GRAPH.yaml"), "")
 
-	// Save a position for the first node
-	require.NoError(t, s.UpsertPosition(&models.NodePosition{NodeID: nodes[0].ID, X: 42, Y: 99}))
+	vaultID, graphIDs, _ := m.RegisterVault(dir)
+	require.NoError(t, m.FullIndexVault(vaultID))
 
-	// Re-index
-	require.NoError(t, idx.FullIndex())
+	gid := graphIDs[0]
+	graph, _ := s.GetGraphData(gid)
+	require.Greater(t, len(graph.Nodes), 0)
 
-	// Position should be preserved
-	positions, err := s.GetAllPositions()
+	require.NoError(t, s.UpsertPosition(gid, &models.NodePosition{NodeID: graph.Nodes[0].ID, X: 42, Y: 99}))
+	require.NoError(t, m.FullIndexVault(vaultID))
+
+	graph2, _ := s.GetGraphData(gid)
+	for _, n := range graph2.Nodes {
+		if n.ID == graph.Nodes[0].ID {
+			assert.InDelta(t, 42, n.Position.X, 0.01)
+			return
+		}
+	}
+	t.Fatal("node not found after re-index")
+}
+
+func TestSiblingGraphs(t *testing.T) {
+	m, s := newTestManager(t)
+
+	dir := t.TempDir()
+	// Create two sibling graphs
+	writeFile(t, filepath.Join(dir, "concepts/GRAPH.yaml"), "")
+	writeFile(t, filepath.Join(dir, "concepts/AI.md"), "---\nid: ai\n---\n# AI\nLinks to [[Network]]\n")
+	writeFile(t, filepath.Join(dir, "concepts/Network.md"), "---\nid: net\n---\n# Network\n")
+	writeFile(t, filepath.Join(dir, "projects/GRAPH.yaml"), "")
+	writeFile(t, filepath.Join(dir, "projects/Mnemosyne.md"), "---\nid: mn\n---\n# Mnemosyne\nLinks to [[AI]]\n")
+
+	vaultID, graphIDs, err := m.RegisterVault(dir)
 	require.NoError(t, err)
-	assert.Len(t, positions, 1)
-	assert.InDelta(t, 42, positions[0].X, 0.01)
+	assert.Len(t, graphIDs, 2)
+
+	require.NoError(t, m.FullIndexVault(vaultID))
+
+	// Find which graph is which
+	graphs, _ := s.GetGraphsByVault(vaultID)
+	var conceptsGID, projectsGID int
+	for _, g := range graphs {
+		if g.RootPath == "concepts" {
+			conceptsGID = g.ID
+		} else if g.RootPath == "projects" {
+			projectsGID = g.ID
+		}
+	}
+
+	cGraph, _ := s.GetGraphData(conceptsGID)
+	assert.Len(t, cGraph.Nodes, 2, "concepts graph should have AI and Network")
+	// ai->net edge should exist within concepts
+	assert.Greater(t, len(cGraph.Edges), 0)
+
+	pGraph, _ := s.GetGraphData(projectsGID)
+	assert.Len(t, pGraph.Nodes, 1, "projects graph should have Mnemosyne only")
+	// mn->ai edge should NOT exist (AI is in a different graph)
+	assert.Len(t, pGraph.Edges, 0)
 }
 
 func TestIndexFile(t *testing.T) {
-	idx, s := newTestIndexer(t)
+	m, s := newTestManager(t)
 
-	// First do a full index so nodes exist for edge references
-	require.NoError(t, idx.FullIndex())
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "GRAPH.yaml"), "")
+	writeFile(t, filepath.Join(dir, "a.md"), "---\nid: a\n---\n# A\n")
 
-	initialNodes, _ := s.GetAllNodes()
+	vaultID, graphIDs, _ := m.RegisterVault(dir)
+	require.NoError(t, m.FullIndexVault(vaultID))
 
-	// Re-index a specific file
-	err := idx.IndexFile("index.md")
+	g, _ := s.GetGraphData(graphIDs[0])
+	assert.Len(t, g.Nodes, 1)
+
+	// Add a new file
+	writeFile(t, filepath.Join(dir, "b.md"), "---\nid: b\n---\n# B\n")
+	affected, err := m.IndexFile(vaultID, "b.md")
 	require.NoError(t, err)
+	assert.Equal(t, graphIDs, affected)
 
-	afterNodes, _ := s.GetAllNodes()
-	assert.Equal(t, len(initialNodes), len(afterNodes), "node count should remain the same")
-}
-
-func TestIndexFileNonexistent(t *testing.T) {
-	idx, _ := newTestIndexer(t)
-
-	// Indexing a path that doesn't produce a node should not error
-	err := idx.IndexFile("nonexistent.md")
-	// The parser will parse the whole vault; if the file doesn't exist
-	// in the parse result, IndexFile just returns nil
-	require.NoError(t, err)
+	g, _ = s.GetGraphData(graphIDs[0])
+	assert.Len(t, g.Nodes, 2)
 }
 
 func TestRemoveFile(t *testing.T) {
-	idx, s := newTestIndexer(t)
-	require.NoError(t, idx.FullIndex())
+	m, s := newTestManager(t)
 
-	nodesBefore, _ := s.GetAllNodes()
-	require.Greater(t, len(nodesBefore), 0)
-
-	// Remove the index file
-	err := idx.RemoveFile("index.md")
-	require.NoError(t, err)
-
-	nodesAfter, _ := s.GetAllNodes()
-	assert.Equal(t, len(nodesBefore)-1, len(nodesAfter))
-}
-
-func TestRemoveFileNonexistent(t *testing.T) {
-	idx, _ := newTestIndexer(t)
-
-	// Removing a file that doesn't exist in DB should not error
-	err := idx.RemoveFile("doesnt-exist.md")
-	require.NoError(t, err)
-}
-
-func TestIndexWithTempVault(t *testing.T) {
-	// Create a temp vault with known content
 	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "note-a.md"), `---
-id: "a"
-tags: ["test"]
----
-# Note A
-Links to [[note-b]]
-`)
-	writeFile(t, filepath.Join(dir, "note-b.md"), `---
-id: "b"
----
-# Note B
-Content of note B.
-`)
+	writeFile(t, filepath.Join(dir, "GRAPH.yaml"), "")
+	writeFile(t, filepath.Join(dir, "a.md"), "---\nid: a\n---\n# A\n")
+	writeFile(t, filepath.Join(dir, "b.md"), "---\nid: b\n---\n# B\n")
 
-	s, err := store.NewMemory()
+	vaultID, graphIDs, _ := m.RegisterVault(dir)
+	require.NoError(t, m.FullIndexVault(vaultID))
+
+	g, _ := s.GetGraphData(graphIDs[0])
+	assert.Len(t, g.Nodes, 2)
+
+	os.Remove(filepath.Join(dir, "a.md"))
+	affected, err := m.RemoveFile(vaultID, "a.md")
 	require.NoError(t, err)
-	defer s.Close()
+	assert.Equal(t, graphIDs, affected)
 
-	idx, err := New(s, dir, nil)
-	require.NoError(t, err)
-
-	require.NoError(t, idx.FullIndex())
-
-	nodes, err := s.GetAllNodes()
-	require.NoError(t, err)
-	assert.Len(t, nodes, 2)
-
-	// Check node A
-	nodeA, err := s.GetNode("a")
-	require.NoError(t, err)
-	assert.NotEmpty(t, nodeA.Title)
-
-	// Check edge from a -> b
-	edges, err := s.GetAllEdges()
-	require.NoError(t, err)
-	assert.Greater(t, len(edges), 0, "should have edge from a to b")
-
-	foundEdge := false
-	for _, e := range edges {
-		if e.SourceID == "a" && e.TargetID == "b" {
-			foundEdge = true
-			break
-		}
-	}
-	assert.True(t, foundEdge, "expected edge from a to b")
+	g, _ = s.GetGraphData(graphIDs[0])
+	assert.Len(t, g.Nodes, 1)
 }
 
-func TestIncrementalAddFile(t *testing.T) {
+func TestTwoVaultsIndependent(t *testing.T) {
+	m, s := newTestManager(t)
+
+	dir1 := t.TempDir()
+	writeFile(t, filepath.Join(dir1, "GRAPH.yaml"), "")
+	writeFile(t, filepath.Join(dir1, "a.md"), "---\nid: v1a\n---\n# V1 A\n")
+
+	dir2 := t.TempDir()
+	writeFile(t, filepath.Join(dir2, "GRAPH.yaml"), "")
+	writeFile(t, filepath.Join(dir2, "a.md"), "---\nid: v2a\n---\n# V2 A\n")
+
+	v1, g1, _ := m.RegisterVault(dir1)
+	v2, g2, _ := m.RegisterVault(dir2)
+
+	require.NoError(t, m.FullIndexVault(v1))
+	require.NoError(t, m.FullIndexVault(v2))
+
+	graph1, _ := s.GetGraphData(g1[0])
+	graph2, _ := s.GetGraphData(g2[0])
+	assert.Len(t, graph1.Nodes, 1)
+	assert.Len(t, graph2.Nodes, 1)
+	assert.Equal(t, "v1a", graph1.Nodes[0].ID)
+	assert.Equal(t, "v2a", graph2.Nodes[0].ID)
+
+	// Re-index v1 should not affect v2
+	require.NoError(t, m.FullIndexVault(v1))
+	graph2After, _ := s.GetGraphData(g2[0])
+	assert.Len(t, graph2After.Nodes, 1)
+}
+
+func TestHandleGraphYAMLCreate(t *testing.T) {
+	m, s := newTestManager(t)
+
 	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "note-a.md"), `---
-id: "a"
----
-# Note A
-`)
+	writeFile(t, filepath.Join(dir, "concepts/GRAPH.yaml"), "")
+	writeFile(t, filepath.Join(dir, "concepts/AI.md"), "---\nid: ai\n---\n# AI\n")
+	writeFile(t, filepath.Join(dir, "projects/X.md"), "---\nid: px\n---\n# X\n")
 
-	s, err := store.NewMemory()
+	vaultID, _, _ := m.RegisterVault(dir)
+	require.NoError(t, m.FullIndexVault(vaultID))
+
+	// Now create a GRAPH.yaml for projects
+	writeFile(t, filepath.Join(dir, "projects/GRAPH.yaml"), "")
+	affected, err := m.HandleGraphYAML(vaultID, "projects", true)
 	require.NoError(t, err)
-	defer s.Close()
+	assert.Len(t, affected, 1)
 
-	idx, err := New(s, dir, nil)
-	require.NoError(t, err)
-
-	require.NoError(t, idx.FullIndex())
-	nodes, _ := s.GetAllNodes()
-	assert.Len(t, nodes, 1)
-
-	// Add a new file to the vault
-	writeFile(t, filepath.Join(dir, "note-b.md"), `---
-id: "b"
----
-# Note B
-`)
-
-	// Incremental index of the new file
-	require.NoError(t, idx.IndexFile("note-b.md"))
-
-	nodes, _ = s.GetAllNodes()
-	assert.Len(t, nodes, 2)
+	graphs, _ := s.GetGraphsByVault(vaultID)
+	assert.Len(t, graphs, 2)
 }
 
-func TestIncrementalRemoveFile(t *testing.T) {
+func TestHandleGraphYAMLDelete(t *testing.T) {
+	m, s := newTestManager(t)
+
 	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "note-a.md"), `---
-id: "a"
----
-# Note A
-`)
-	writeFile(t, filepath.Join(dir, "note-b.md"), `---
-id: "b"
----
-# Note B
-Links to [[note-a]]
-`)
+	writeFile(t, filepath.Join(dir, "concepts/GRAPH.yaml"), "")
+	writeFile(t, filepath.Join(dir, "concepts/AI.md"), "---\nid: ai\n---\n# AI\n")
 
-	s, err := store.NewMemory()
+	vaultID, _, _ := m.RegisterVault(dir)
+	require.NoError(t, m.FullIndexVault(vaultID))
+
+	graphs, _ := s.GetGraphsByVault(vaultID)
+	assert.Len(t, graphs, 1)
+
+	os.Remove(filepath.Join(dir, "concepts/GRAPH.yaml"))
+	affected, err := m.HandleGraphYAML(vaultID, "concepts", false)
 	require.NoError(t, err)
-	defer s.Close()
+	assert.Len(t, affected, 1)
 
-	idx, err := New(s, dir, nil)
-	require.NoError(t, err)
-
-	require.NoError(t, idx.FullIndex())
-	nodes, _ := s.GetAllNodes()
-	assert.Len(t, nodes, 2)
-
-	// Remove note-a from disk and from DB
-	os.Remove(filepath.Join(dir, "note-a.md"))
-	require.NoError(t, idx.RemoveFile("note-a.md"))
-
-	nodes, _ = s.GetAllNodes()
-	assert.Len(t, nodes, 1)
-	assert.Equal(t, "b", nodes[0].ID)
+	graphs, _ = s.GetGraphsByVault(vaultID)
+	assert.Len(t, graphs, 0)
 }
+
+// --- helpers ---
 
 func writeFile(t *testing.T, path, content string) {
 	t.Helper()
 	require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o755))
 	require.NoError(t, os.WriteFile(path, []byte(content), 0o644))
+}
+
+func copyVault(t *testing.T, src, dst string) {
+	t.Helper()
+	err := filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, _ := filepath.Rel(src, path)
+		target := filepath.Join(dst, rel)
+		if info.IsDir() {
+			return os.MkdirAll(target, 0o755)
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(target, data, 0o644)
+	})
+	require.NoError(t, err)
 }

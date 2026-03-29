@@ -16,6 +16,7 @@
     };
   }
 
+  export let graphId: string = '';
   export let placeholder = 'Search nodes...';
 
   const dispatch = createEventDispatcher();
@@ -55,7 +56,10 @@
     }, LOADING_SPINNER_DELAY_MS);
 
     try {
-      const response = await fetch(`/api/v1/nodes/search?q=${encodeURIComponent(query)}`, {
+      const searchUrl = graphId
+        ? `/api/v1/graphs/${graphId}/search?q=${encodeURIComponent(query)}`
+        : `/api/v1/graphs/0/search?q=${encodeURIComponent(query)}`;
+      const response = await fetch(searchUrl, {
         signal: abortController.signal
       });
 

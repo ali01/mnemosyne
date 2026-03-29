@@ -2,6 +2,7 @@
 package api
 
 import (
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"net/http"
@@ -12,37 +13,52 @@ import (
 	"github.com/ali01/mnemosyne/internal/store"
 )
 
+// sseEvent carries typed event data to SSE clients.
+type sseEvent struct {
+	Type     string `json:"type"`               // "graph-updated" or "graphs-changed"
+	GraphIDs []int  `json:"graphIds,omitempty"`
+}
+
 // Server is the HTTP server for Mnemosyne.
 type Server struct {
 	store   *store.Store
-	indexer *indexer.Indexer
+	indexer *indexer.IndexManager
 	mux     *http.ServeMux
 	port    int
 
-	sseClients   map[chan struct{}]struct{}
+	sseClients   map[chan sseEvent]struct{}
 	sseClientsMu sync.Mutex
 }
 
 // NewServer creates a new HTTP server.
-func NewServer(s *store.Store, idx *indexer.Indexer, staticFS fs.FS, port int) *Server {
+func NewServer(s *store.Store, idx *indexer.IndexManager, staticFS fs.FS, port int) *Server {
 	srv := &Server{
 		store:      s,
 		indexer:    idx,
 		mux:        http.NewServeMux(),
 		port:       port,
-		sseClients: make(map[chan struct{}]struct{}),
+		sseClients: make(map[chan sseEvent]struct{}),
 	}
 
 	// API routes
 	srv.mux.HandleFunc("GET /api/v1/events", srv.handleSSE)
 	srv.mux.HandleFunc("GET /api/v1/health", srv.handleHealth)
-	srv.mux.HandleFunc("GET /api/v1/graph", srv.handleGetGraph)
-	srv.mux.HandleFunc("GET /api/v1/nodes/search", srv.handleSearchNodes)
+
+	// Graph listing and data
+	srv.mux.HandleFunc("GET /api/v1/graphs", srv.handleListGraphs)
+	srv.mux.HandleFunc("GET /api/v1/graphs/{id}", srv.handleGetGraphData)
+	srv.mux.HandleFunc("GET /api/v1/graphs/{id}/search", srv.handleSearchInGraph)
+
+	// Graph-scoped positions
+	srv.mux.HandleFunc("PUT /api/v1/graphs/{id}/positions", srv.handleUpdateGraphPositions)
+	srv.mux.HandleFunc("PUT /api/v1/graphs/{id}/positions/{nodeId}", srv.handleUpdateGraphPosition)
+
+	// Node content (not graph-scoped)
 	srv.mux.HandleFunc("GET /api/v1/nodes/{id}", srv.handleGetNode)
 	srv.mux.HandleFunc("GET /api/v1/nodes/{id}/content", srv.handleGetNodeContent)
-	srv.mux.HandleFunc("PUT /api/v1/nodes/{id}/position", srv.handleUpdatePosition)
-	srv.mux.HandleFunc("PUT /api/v1/nodes/positions", srv.handleUpdatePositions)
-	srv.mux.HandleFunc("POST /api/v1/vault/reindex", srv.handleReindex)
+
+	// Reindex
+	srv.mux.HandleFunc("POST /api/v1/reindex", srv.handleReindex)
 
 	// Static files with SPA fallback
 	if staticFS != nil {
@@ -57,13 +73,22 @@ func (s *Server) Handler() http.Handler {
 	return corsMiddleware(s.mux)
 }
 
-// NotifyChange broadcasts a graph-changed event to all SSE clients.
-func (s *Server) NotifyChange() {
+// NotifyChange broadcasts a graph-updated event to all SSE clients.
+func (s *Server) NotifyChange(graphIDs []int) {
+	s.broadcast(sseEvent{Type: "graph-updated", GraphIDs: graphIDs})
+}
+
+// NotifyGraphsChanged broadcasts a graphs-changed event to all SSE clients.
+func (s *Server) NotifyGraphsChanged() {
+	s.broadcast(sseEvent{Type: "graphs-changed"})
+}
+
+func (s *Server) broadcast(evt sseEvent) {
 	s.sseClientsMu.Lock()
 	defer s.sseClientsMu.Unlock()
 	for ch := range s.sseClients {
 		select {
-		case ch <- struct{}{}:
+		case ch <- evt:
 		default:
 		}
 	}
@@ -81,7 +106,7 @@ func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 
-	ch := make(chan struct{}, 1)
+	ch := make(chan sseEvent, 1)
 	s.sseClientsMu.Lock()
 	s.sseClients[ch] = struct{}{}
 	s.sseClientsMu.Unlock()
@@ -92,7 +117,6 @@ func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request) {
 		s.sseClientsMu.Unlock()
 	}()
 
-	// Send initial connected event
 	fmt.Fprintf(w, "event: connected\ndata: ok\n\n")
 	flusher.Flush()
 
@@ -100,8 +124,9 @@ func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request) {
 		select {
 		case <-r.Context().Done():
 			return
-		case <-ch:
-			fmt.Fprintf(w, "event: graph-updated\ndata: reload\n\n")
+		case evt := <-ch:
+			data, _ := json.Marshal(evt)
+			fmt.Fprintf(w, "event: %s\ndata: %s\n\n", evt.Type, data)
 			flusher.Flush()
 		}
 	}
@@ -111,7 +136,6 @@ func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request) {
 func spaHandler(staticFS fs.FS) http.Handler {
 	fileServer := http.FileServer(http.FS(staticFS))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Try to serve the file directly
 		path := r.URL.Path
 		if path == "/" {
 			path = "index.html"
@@ -119,13 +143,11 @@ func spaHandler(staticFS fs.FS) http.Handler {
 			path = strings.TrimPrefix(path, "/")
 		}
 
-		// Check if file exists
 		if _, err := fs.Stat(staticFS, path); err == nil {
 			fileServer.ServeHTTP(w, r)
 			return
 		}
 
-		// SPA fallback: serve index.html for non-API, non-file routes
 		r.URL.Path = "/"
 		fileServer.ServeHTTP(w, r)
 	})

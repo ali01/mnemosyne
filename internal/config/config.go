@@ -11,13 +11,12 @@ import (
 
 // Config holds all application configuration.
 type Config struct {
-	VaultPath          string                  `yaml:"vault_path"`
-	Port               int                     `yaml:"port"`
-	DBPath             string                  `yaml:"db_path"`
-	NodeClassification *NodeClassificationConfig `yaml:"node_classification,omitempty"`
+	Port   int      `yaml:"port"`
+	Vaults []string `yaml:"vaults"`
 }
 
 // NodeClassificationConfig holds node type and classification rule configuration.
+// Lives in GRAPH.yaml files, not the global config.
 type NodeClassificationConfig struct {
 	NodeTypes           map[string]NodeTypeConfig  `yaml:"node_types"`
 	ClassificationRules []ClassificationRuleConfig `yaml:"classification_rules"`
@@ -42,6 +41,18 @@ type ClassificationRuleConfig struct {
 	Description string `yaml:"description,omitempty"`
 }
 
+// DefaultConfigPath returns the default config file location.
+func DefaultConfigPath() string {
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".config", "mnemosyne", "config.yaml")
+}
+
+// DBPath returns the fixed database path.
+func DBPath() string {
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".config", "mnemosyne", "mnemosyne.db")
+}
+
 // Load reads and parses a config file.
 func Load(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
@@ -50,27 +61,39 @@ func Load(path string) (*Config, error) {
 	}
 
 	cfg := &Config{
-		Port:   5555,
-		DBPath: defaultDBPath(),
+		Port: 5555,
 	}
 	if err := yaml.Unmarshal(data, cfg); err != nil {
 		return nil, fmt.Errorf("parse config: %w", err)
 	}
 
-	if cfg.VaultPath == "" {
-		return nil, fmt.Errorf("vault_path is required")
+	if len(cfg.Vaults) == 0 {
+		return nil, fmt.Errorf("at least one vault path is required in 'vaults'")
 	}
 
-	// Expand ~ in paths
-	cfg.VaultPath = expandHome(cfg.VaultPath)
-	cfg.DBPath = expandHome(cfg.DBPath)
+	for i, v := range cfg.Vaults {
+		cfg.Vaults[i] = expandHome(v)
+	}
 
 	return cfg, nil
 }
 
-func defaultDBPath() string {
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".config", "mnemosyne", "mnemosyne.db")
+// CreateDefault writes a new config file with the given vault path.
+func CreateDefault(cfgPath, vaultPath string) error {
+	if err := os.MkdirAll(filepath.Dir(cfgPath), 0o755); err != nil {
+		return fmt.Errorf("create config directory: %w", err)
+	}
+	cfg := Config{Port: 5555, Vaults: []string{vaultPath}}
+	data, err := yaml.Marshal(cfg)
+	if err != nil {
+		return fmt.Errorf("marshal config: %w", err)
+	}
+	return os.WriteFile(cfgPath, data, 0o644)
+}
+
+// ExpandHome expands a leading ~/ to the user's home directory.
+func ExpandHome(path string) string {
+	return expandHome(path)
 }
 
 func expandHome(path string) string {

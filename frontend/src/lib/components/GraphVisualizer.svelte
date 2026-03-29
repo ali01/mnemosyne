@@ -175,7 +175,7 @@
                 for (const [cid, members] of communities) {
                     const cx = metaGraph.getNodeAttribute(cid, "x");
                     const cy = metaGraph.getNodeAttribute(cid, "y");
-                    const spread = Math.sqrt(members.length) * 6;
+                    const spread = Math.sqrt(members.length) * 18;
                     for (const node of members) {
                         graph.setNodeAttribute(node, "x", cx + (Math.random() - 0.5) * spread);
                         graph.setNodeAttribute(node, "y", cy + (Math.random() - 0.5) * spread);
@@ -424,10 +424,15 @@
             }
         });
 
+        let dragStartX = 0;
+        let dragStartY = 0;
+
         sigma.on("downNode", (e) => {
             draggedNode = e.node;
             isDragging = true;
             hasDragged = false;
+            dragStartX = graph.getNodeAttribute(draggedNode, "x");
+            dragStartY = graph.getNodeAttribute(draggedNode, "y");
             if (sigma) {
                 sigma.getGraph().setNodeAttribute(draggedNode, "highlighted", true);
             }
@@ -437,8 +442,22 @@
             if (isDragging && draggedNode && sigma) {
                 hasDragged = true;
                 const pos = sigma.viewportToGraph(e);
-                sigma.getGraph().setNodeAttribute(draggedNode, "x", pos.x);
-                sigma.getGraph().setNodeAttribute(draggedNode, "y", pos.y);
+                const dx = pos.x - graph.getNodeAttribute(draggedNode, "x");
+                const dy = pos.y - graph.getNodeAttribute(draggedNode, "y");
+
+                graph.setNodeAttribute(draggedNode, "x", pos.x);
+                graph.setNodeAttribute(draggedNode, "y", pos.y);
+
+                // Drag neighbors along — smaller nodes move more, bigger ones resist
+                graph.forEachNeighbor(draggedNode, (neighbor) => {
+                    const nx = graph.getNodeAttribute(neighbor, "x");
+                    const ny = graph.getNodeAttribute(neighbor, "y");
+                    const size = graph.getNodeAttribute(neighbor, "size") || 3;
+                    const influence = 2 / size;
+                    graph.setNodeAttribute(neighbor, "x", nx + dx * influence);
+                    graph.setNodeAttribute(neighbor, "y", ny + dy * influence);
+                });
+
                 e.preventSigmaDefault();
                 e.original.preventDefault();
                 e.original.stopPropagation();
@@ -452,13 +471,22 @@
                     graph.setNodeAttribute(draggedNode, "highlighted", false);
 
                     if (hasDragged) {
+                        // Save dragged node + all affected neighbors in one batch
+                        const positions: { node_id: string; x: number; y: number }[] = [];
                         const nodeData = graph.getNodeAttributes(draggedNode);
                         if (nodeData.x !== undefined && nodeData.y !== undefined) {
-                            debouncedUpdatePosition(draggedNode, {
-                                x: nodeData.x,
-                                y: nodeData.y,
-                            });
+                            positions.push({ node_id: draggedNode, x: nodeData.x, y: nodeData.y });
                         }
+                        graph.forEachNeighbor(draggedNode, (neighbor) => {
+                            const nx = graph.getNodeAttribute(neighbor, "x");
+                            const ny = graph.getNodeAttribute(neighbor, "y");
+                            positions.push({ node_id: neighbor, x: nx, y: ny });
+                        });
+                        fetch("/api/v1/nodes/positions", {
+                            method: "PUT",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify(positions),
+                        }).catch((err) => console.error("Failed to save positions:", err));
                     }
                 }
             }

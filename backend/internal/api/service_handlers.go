@@ -180,6 +180,31 @@ func (h *ServiceHandler) updateNodePosition(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Position updated successfully"})
 }
 
+// updateNodePositions updates multiple node positions in a batch
+func (h *ServiceHandler) updateNodePositions(c *gin.Context) {
+	ctx, cancel := context.WithTimeout(c.Request.Context(), h.cfg.Server.RequestTimeout)
+	defer cancel()
+
+	var positions []models.NodePosition
+	if err := c.ShouldBindJSON(&positions); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
+		return
+	}
+
+	if len(positions) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "No positions provided"})
+		return
+	}
+
+	err := h.positionService.UpdateNodePositions(ctx, positions)
+	if err != nil {
+		handleError(c, err, "Failed to update positions")
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Positions updated successfully", "count": len(positions)})
+}
+
 // searchNodes performs full-text search on nodes
 func (h *ServiceHandler) searchNodes(c *gin.Context) {
 	// Use request context with timeout

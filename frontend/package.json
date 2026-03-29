@@ -40,6 +40,7 @@
     "@types/dompurify": "^3.0.5",
     "dexie": "^4.0.1",
     "graphology": "^0.25.4",
+    "graphology-layout-forceatlas2": "^0.10.1",
     "isomorphic-dompurify": "^2.26.0",
     "marked": "^12.0.0",
     "sigma": "^3.0.0-beta.10"

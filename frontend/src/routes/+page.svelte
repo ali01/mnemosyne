@@ -1,63 +1,115 @@
 <script lang="ts">
-	import GraphVisualizer from '$lib/components/GraphVisualizer.svelte';
-	import SearchBar from '$lib/components/SearchBar.svelte';
-	import { onMount } from 'svelte';
-	import { goto } from '$app/navigation';
+  import GraphVisualizer from '$lib/components/GraphVisualizer.svelte';
+  import SearchBar from '$lib/components/SearchBar.svelte';
+  import { onMount } from 'svelte';
+  import { goto } from '$app/navigation';
 
-	let mounted = false;
+  let mounted = false;
 
-	onMount(() => {
-		mounted = true;
-	});
+  onMount(() => {
+    mounted = true;
+  });
 
-	function handleSearchSelect(event: CustomEvent) {
-		const node = event.detail;
+  function handleSearchSelect(event: CustomEvent) {
+    const node = event.detail;
 
-		// Validate node ID before navigation
-		if (!node?.id) {
-			console.error('Invalid node selected:', node);
-			return;
-		}
+    if (!node?.id) {
+      console.error('Invalid node selected:', node);
+      return;
+    }
 
-		// Navigate to the selected node's content with error handling
-		try {
-			goto(`/notes/${node.id}`);
-		} catch (error) {
-			console.error('Navigation failed:', error);
-		}
-	}
+    try {
+      goto(`/notes/${node.id}`);
+    } catch (error) {
+      console.error('Navigation failed:', error);
+    }
+  }
 </script>
 
 <svelte:head>
-	<title>Mnemosyne - Knowledge Graph</title>
+  <title>Mnemosyne</title>
 </svelte:head>
 
 <main>
-	{#if mounted}
-		<div class="search-overlay" role="search" aria-label="Search graph nodes">
-			<SearchBar on:select={handleSearchSelect} />
-		</div>
-		<GraphVisualizer />
-	{/if}
+  {#if mounted}
+    <div class="chrome-top">
+      <div class="brand">
+        <span class="brand-mark">M</span>
+        <span class="brand-name">mnemosyne</span>
+      </div>
+      <div class="search-area" role="search" aria-label="Search graph nodes">
+        <SearchBar on:select={handleSearchSelect} />
+      </div>
+    </div>
+    <GraphVisualizer />
+  {/if}
 </main>
 
 <style>
-	main {
-		height: 100vh;
-		width: 100vw;
-		position: relative;
-		overflow: hidden;
-	}
+  main {
+    height: 100vh;
+    width: 100vw;
+    position: relative;
+    overflow: hidden;
+    background: var(--color-void);
+  }
 
-	:root {
-		--spacing-md: 20px;
-		--z-index-overlay: 100;
-	}
+  .chrome-top {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 14px 20px;
+    pointer-events: none;
+    background: linear-gradient(
+      to bottom,
+      var(--color-void) 0%,
+      rgba(10, 10, 15, 0.8) 60%,
+      transparent 100%
+    );
+  }
 
-	.search-overlay {
-		position: absolute;
-		top: var(--spacing-md);
-		left: var(--spacing-md);
-		z-index: var(--z-index-overlay);
-	}
+  .chrome-top > * {
+    pointer-events: auto;
+  }
+
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-shrink: 0;
+  }
+
+  .brand-mark {
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--color-accent-dim);
+    color: var(--color-accent);
+    font-family: var(--font-body);
+    font-weight: 500;
+    font-size: 14px;
+    border-radius: var(--radius-sm);
+    letter-spacing: 0.02em;
+  }
+
+  .brand-name {
+    font-family: var(--font-body);
+    font-size: 13px;
+    font-weight: 400;
+    color: var(--color-text-secondary);
+    letter-spacing: 0.04em;
+    text-transform: lowercase;
+  }
+
+  .search-area {
+    flex: 1;
+    max-width: 360px;
+  }
 </style>

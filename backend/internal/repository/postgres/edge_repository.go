@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/google/uuid"
@@ -144,8 +145,14 @@ func (r *EdgeRepository) CreateBatch(exec repository.Executor, ctx context.Conte
 
 // createBatchWithCopy uses PostgreSQL COPY for efficient batch insert
 func (r *EdgeRepository) createBatchWithCopy(ctx context.Context, tx *sqlx.Tx, edges []models.VaultEdge) error {
-	// Validate all edges before starting the batch operation
+	// Validate all edges before starting the batch operation, filtering out
+	// self-referential edges which can occur naturally in vaults.
+	var validEdges []models.VaultEdge
 	for i, edge := range edges {
+		if edge.SourceID == edge.TargetID {
+			log.Printf("Skipping self-referential edge at index %d (node %s)", i, edge.SourceID)
+			continue
+		}
 		// Skip ID validation if it will be generated
 		if edge.ID == "" {
 			// Temporarily set ID for validation
@@ -160,7 +167,9 @@ func (r *EdgeRepository) createBatchWithCopy(ctx context.Context, tx *sqlx.Tx, e
 				return fmt.Errorf("validation failed for edge at index %d: %w", i, err)
 			}
 		}
+		validEdges = append(validEdges, edge)
 	}
+	edges = validEdges
 
 	stmt, err := tx.PrepareContext(ctx, pq.CopyIn("edges",
 		"id", "source_id", "target_id", "edge_type", "display_text", "weight", "created_at"))

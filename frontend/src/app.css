@@ -1,26 +1,69 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,300&family=JetBrains+Mono:wght@400&display=swap');
+
 :root {
-	--color-background: #1a1a1a;
-	--color-surface: #2a2a2a;
-	--color-primary: #3a7bd5;
-	--color-text: #e0e0e0;
-	--color-text-secondary: #a0a0a0;
+  --color-void: #0a0a0f;
+  --color-background: #0e0e16;
+  --color-surface: #151520;
+  --color-surface-raised: #1c1c2a;
+  --color-border: rgba(255, 255, 255, 0.06);
+  --color-border-focus: rgba(140, 160, 255, 0.3);
+
+  --color-text: #c8cad0;
+  --color-text-secondary: #6b6d78;
+  --color-text-muted: #444650;
+
+  --color-accent: #7b8cff;
+  --color-accent-dim: rgba(123, 140, 255, 0.12);
+  --color-accent-glow: rgba(123, 140, 255, 0.06);
+
+  --color-node-core: #ff6b6b;
+  --color-node-sub: #6bc5ff;
+  --color-node-detail: #6bffb8;
+  --color-node-default: #7b8cff;
+
+  --font-body: 'DM Sans', -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 * {
-	box-sizing: border-box;
-	margin: 0;
-	padding: 0;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
 }
 
 html, body {
-	height: 100%;
-	font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-	background-color: var(--color-background);
-	color: var(--color-text);
+  height: 100%;
+  font-family: var(--font-body);
+  background-color: var(--color-void);
+  color: var(--color-text);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-#app {
-	height: 100vh;
-	display: flex;
-	flex-direction: column;
+::selection {
+  background: var(--color-accent-dim);
+  color: var(--color-accent);
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-text-muted);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-secondary);
 }

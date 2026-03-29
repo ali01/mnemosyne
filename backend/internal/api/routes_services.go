@@ -27,11 +27,12 @@ func SetupRoutesWithServices(router *gin.Engine, nodeService *service.NodeServic
 		api.GET("/graph", h.getGraph)
 		api.GET("/graph/viewport", h.getViewportNodes)
 
-		// Node endpoints
+		// Node endpoints (static routes before parameterized)
+		api.PUT("/nodes/positions", h.updateNodePositions)
+		api.GET("/nodes/search", h.searchNodes)
 		api.GET("/nodes/:id", h.getNode)
 		api.GET("/nodes/:id/content", h.getNodeContent)
 		api.PUT("/nodes/:id/position", h.updateNodePosition)
-		api.GET("/nodes/search", h.searchNodes)
 
 		// Vault parse endpoints (RESTful resource-based)
 		// TODO(CL): Consider adding DELETE /vault/parses/:id to cancel running parses

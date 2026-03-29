@@ -123,6 +123,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS update_node_position_timestamp ON node_positions;
 CREATE TRIGGER update_node_position_timestamp
 BEFORE UPDATE ON node_positions
 FOR EACH ROW

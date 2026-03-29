@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { onMount, onDestroy } from "svelte";
+    import { onMount, onDestroy, tick } from "svelte";
     import { graphStore, fetchWithRetry } from "$lib/stores/graph";
     import { debounce } from "$lib/utils/debounce";
     import { goto } from "$app/navigation";
@@ -16,23 +16,44 @@
     let loading = true;
     let error = "";
     let unsubscribe: (() => void) | null = null;
+    let nodeCount = 0;
+    let edgeCount = 0;
+    let hoveredNode: string | null = null;
 
     const debouncedUpdatePosition = debounce(
         (nodeId: string, position: { x: number; y: number }) => {
-            graphStore.updateNodePosition(nodeId, position);
+            fetch(`/api/v1/nodes/${encodeURIComponent(nodeId)}/position`, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(position),
+            }).catch((err) => console.error("Failed to save position:", err));
         },
-        300, // 300ms debounce
+        300,
     );
+
+    function getNodeColor(type: string): string {
+        switch (type) {
+            case "core":
+                return "#ff6b6b";
+            case "sub":
+                return "#6bc5ff";
+            case "detail":
+                return "#6bffb8";
+            default:
+                return "#7b8cff";
+        }
+    }
 
     onMount(async () => {
         const graphologyModule = await import("graphology");
         const sigmaModule = await import("sigma");
+        const forceAtlas2Module = await import("graphology-layout-forceatlas2");
         GraphConstructor = graphologyModule.default;
         SigmaConstructor = sigmaModule.default;
+        const forceAtlas2 = forceAtlas2Module.default;
 
         const graph = new GraphConstructor();
 
-        // Load graph data from API
         try {
             const response = await fetchWithRetry("/api/v1/graph?level=0");
 
@@ -42,73 +63,238 @@
 
             const data = await response.json();
 
-            // Add nodes
             data.nodes.forEach((node: any) => {
+                const hasPosition = node.position.x !== 0 || node.position.y !== 0;
                 graph.addNode(node.id, {
-                    x: node.position.x,
-                    y: node.position.y,
-                    size: 10,
+                    x: hasPosition ? node.position.x : (Math.random() - 0.5) * 200,
+                    y: hasPosition ? node.position.y : (Math.random() - 0.5) * 200,
+                    size: 3,
                     label: node.title,
                     color: getNodeColor(node.metadata?.type),
-                    metadata: node.metadata, // Store metadata for later use
+                    metadata: node.metadata,
                 });
             });
 
-            // Add edges
             data.edges.forEach((edge: any) => {
                 try {
                     graph.addEdge(edge.source, edge.target, {
                         weight: edge.weight,
-                        // Remove type for now - Sigma needs special configuration for edge types
                     });
                 } catch (e) {
-                    // Skip if nodes don't exist
+                    // Skip duplicate edges or missing nodes
                 }
             });
 
+            // Run ForceAtlas2 layout if no saved positions
+            const needsLayout = data.nodes.every(
+                (n: any) => n.position.x === 0 && n.position.y === 0,
+            );
+            if (needsLayout) {
+                forceAtlas2.assign(graph, {
+                    iterations: 300,
+                    settings: {
+                        gravity: 0.02,
+                        scalingRatio: 20,
+                        barnesHutOptimize: true,
+                        barnesHutTheta: 0.5,
+                        strongGravityMode: false,
+                        slowDown: 8,
+                        adjustSizes: true,
+                    },
+                });
+
+                // Save computed positions to backend
+                const positions: { node_id: string; x: number; y: number }[] = [];
+                graph.forEachNode((node, attrs) => {
+                    positions.push({ node_id: node, x: attrs.x, y: attrs.y });
+                });
+                fetch("/api/v1/nodes/positions", {
+                    method: "PUT",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(positions),
+                }).catch((err) => console.error("Failed to save positions:", err));
+            }
+
+            // Scale node sizes by degree
+            graph.forEachNode((node) => {
+                const degree = graph.degree(node);
+                const size = 1.5 + Math.sqrt(degree) * 1.5;
+                graph.setNodeAttribute(node, "size", size);
+            });
+
+            nodeCount = graph.order;
+            edgeCount = graph.size;
+
             loading = false;
+            await tick();
         } catch (err) {
             console.error("Failed to load graph:", err);
             error =
                 err instanceof Error
                     ? err.message
                     : "Failed to load graph data";
-            toast.error(
-                "Failed to load graph. Please refresh the page to try again.",
-            );
+            toast.error("Failed to load graph data.");
             loading = false;
             return;
         }
 
-        const settings = {
+        sigma = new SigmaConstructor(graph, container, {
             renderLabels: true,
             renderEdgeLabels: false,
-            defaultNodeColor: "#3a7bd5",
-            defaultEdgeColor: "#666",
-            labelColor: { color: "#ffffff" },
-            minZoomRatio: 0.1,
-            maxZoomRatio: 10,
-        };
+            defaultNodeColor: "#7b8cff",
+            defaultEdgeColor: "rgba(255, 255, 255, 0.035)",
+            defaultEdgeType: "line",
+            labelColor: { color: "rgba(200, 202, 208, 0.85)" },
+            labelFont: "DM Sans, sans-serif",
+            labelWeight: "300",
+            labelSize: 11,
+            labelRenderedSizeThreshold: 6,
+            labelDensity: 0.4,
+            labelGridCellSize: 150,
+            minZoomRatio: 0.005,
+            maxZoomRatio: 30,
+            minEdgeThickness: 0.4,
+            stagePadding: 40,
+            defaultDrawNodeLabel: (context: CanvasRenderingContext2D, data: any, settings: any) => {
+                if (!data.label) return;
+                const size = settings.labelSize;
+                const font = settings.labelFont;
+                const weight = settings.labelWeight;
+                context.fillStyle = "rgba(200, 202, 208, 0.85)";
+                context.font = `${weight} ${size}px ${font}`;
+                context.fillText(data.label, data.x + data.size + 3, data.y + size / 3);
+            },
+            defaultDrawNodeHover: (context: CanvasRenderingContext2D, data: any, settings: any) => {
+                const size = settings.labelSize;
+                const font = settings.labelFont;
+                const weight = settings.labelWeight;
+                context.font = `${weight} ${size}px ${font}`;
 
-        sigma = new SigmaConstructor(graph, container, settings);
+                const PADDING = 4;
+                const bgColor = "rgba(14, 14, 22, 0.92)";
+                const borderColor = "rgba(123, 140, 255, 0.25)";
+                const labelColor = "#e0e2e8";
 
-        // Subscribe to graph store for saving state after sigma is initialized
+                if (typeof data.label === "string") {
+                    const textWidth = context.measureText(data.label).width;
+                    const boxWidth = Math.round(textWidth + 8);
+                    const boxHeight = Math.round(size + 2 * PADDING);
+                    const radius = Math.max(data.size, size / 2) + PADDING;
+                    const xStart = data.x + radius;
+
+                    // Background pill
+                    context.fillStyle = bgColor;
+                    context.shadowOffsetX = 0;
+                    context.shadowOffsetY = 2;
+                    context.shadowBlur = 12;
+                    context.shadowColor = "rgba(0, 0, 0, 0.5)";
+                    context.beginPath();
+                    context.roundRect(
+                        xStart - 2,
+                        data.y - boxHeight / 2,
+                        boxWidth + 4,
+                        boxHeight,
+                        4
+                    );
+                    context.fill();
+
+                    // Border
+                    context.shadowBlur = 0;
+                    context.strokeStyle = borderColor;
+                    context.lineWidth = 1;
+                    context.stroke();
+
+                    // Node circle with glow
+                    context.beginPath();
+                    context.arc(data.x, data.y, data.size + PADDING, 0, Math.PI * 2);
+                    context.fillStyle = bgColor;
+                    context.fill();
+                } else {
+                    context.beginPath();
+                    context.arc(data.x, data.y, data.size + PADDING, 0, Math.PI * 2);
+                    context.fillStyle = bgColor;
+                    context.shadowBlur = 12;
+                    context.shadowColor = "rgba(0, 0, 0, 0.5)";
+                    context.fill();
+                    context.shadowBlur = 0;
+                }
+
+                // Node dot
+                context.beginPath();
+                context.arc(data.x, data.y, data.size, 0, Math.PI * 2);
+                context.fillStyle = data.color;
+                context.fill();
+
+                // Label text
+                if (typeof data.label === "string") {
+                    context.fillStyle = labelColor;
+                    context.shadowBlur = 0;
+                    context.fillText(data.label, data.x + data.size + PADDING + 3, data.y + size / 3);
+                }
+            },
+            nodeReducer: (node, data) => {
+                const res = { ...data };
+                if (hoveredNode) {
+                    if (node === hoveredNode) {
+                        res.highlighted = true;
+                        res.zIndex = 1;
+                    } else if (graph.hasEdge(node, hoveredNode) || graph.hasEdge(hoveredNode, node)) {
+                        res.highlighted = true;
+                        res.zIndex = 1;
+                    } else {
+                        res.color = "rgba(60, 60, 80, 0.3)";
+                        res.label = "";
+                        res.zIndex = 0;
+                    }
+                }
+                return res;
+            },
+            edgeReducer: (edge, data) => {
+                const res = { ...data };
+                if (hoveredNode) {
+                    const src = graph.source(edge);
+                    const tgt = graph.target(edge);
+                    if (src === hoveredNode || tgt === hoveredNode) {
+                        res.color = "rgba(123, 140, 255, 0.25)";
+                        res.size = 1;
+                        res.zIndex = 1;
+                    } else {
+                        res.color = "rgba(255, 255, 255, 0.008)";
+                        res.zIndex = 0;
+                    }
+                }
+                return res;
+            },
+        });
+
+        // Hover interactions
+        sigma.on("enterNode", ({ node }) => {
+            hoveredNode = node;
+            container.style.cursor = "pointer";
+            sigma.refresh();
+        });
+
+        sigma.on("leaveNode", () => {
+            hoveredNode = null;
+            container.style.cursor = "default";
+            sigma.refresh();
+        });
+
+        // Subscribe to graph store for saving state
         unsubscribe = graphStore.subscribe((state) => {
             savingNodes = state.savingNodes;
 
-            // Update node visual state based on saving status
-            // Check that sigma still exists and has a graph
             if (sigma && sigma.getGraph) {
                 const graph = sigma.getGraph();
                 if (graph) {
                     savingNodes.forEach((nodeId) => {
                         if (graph.hasNode(nodeId)) {
-                            graph.setNodeAttribute(nodeId, "color", "#ffa500"); // Orange for saving
+                            graph.setNodeAttribute(nodeId, "color", "#ffb347");
                         }
                     });
 
                     graph.forEachNode((node, attributes) => {
-                        if (!savingNodes.has(node) && attributes.color === "#ffa500") {
+                        if (!savingNodes.has(node) && attributes.color === "#ffb347") {
                             graph.setNodeAttribute(
                                 node,
                                 "color",
@@ -120,10 +306,14 @@
             }
         });
 
-        // Handle node clicks
+        // Node dragging state
+        let draggedNode: string | null = null;
+        let isDragging = false;
+        let hasDragged = false;
+
+        // Node clicks — only navigate if the user didn't drag
         sigma.on("clickNode", ({ node }) => {
-            // Validate and encode the node ID to prevent path traversal attacks
-            // Node IDs should be alphanumeric with hyphens/underscores
+            if (hasDragged) return;
             if (/^[a-zA-Z0-9_-]+$/.test(node)) {
                 goto(`/notes/${encodeURIComponent(node)}`);
             } else {
@@ -132,27 +322,21 @@
             }
         });
 
-        // Handle node dragging
-        let draggedNode: string | null = null;
-        let isDragging = false;
-
         sigma.on("downNode", (e) => {
             draggedNode = e.node;
             isDragging = true;
+            hasDragged = false;
             if (sigma) {
-                sigma
-                    .getGraph()
-                    .setNodeAttribute(draggedNode, "highlighted", true);
+                sigma.getGraph().setNodeAttribute(draggedNode, "highlighted", true);
             }
         });
 
         sigma.getMouseCaptor().on("mousemovebody", (e: any) => {
             if (isDragging && draggedNode && sigma) {
-                // Get the pointer position relative to the sigma container
+                hasDragged = true;
                 const pos = sigma.viewportToGraph(e);
                 sigma.getGraph().setNodeAttribute(draggedNode, "x", pos.x);
                 sigma.getGraph().setNodeAttribute(draggedNode, "y", pos.y);
-                // Prevent the default camera movement
                 e.preventSigmaDefault();
                 e.original.preventDefault();
                 e.original.stopPropagation();
@@ -162,17 +346,17 @@
         sigma.getMouseCaptor().on("mouseup", () => {
             if (draggedNode && sigma) {
                 const graph = sigma.getGraph();
-                // Check if the node still exists before accessing its attributes
                 if (graph.hasNode(draggedNode)) {
                     graph.setNodeAttribute(draggedNode, "highlighted", false);
 
-                    // Save the new position to the backend (debounced)
-                    const nodeData = graph.getNodeAttributes(draggedNode);
-                    if (nodeData.x !== undefined && nodeData.y !== undefined) {
-                        debouncedUpdatePosition(draggedNode, {
-                            x: nodeData.x,
-                            y: nodeData.y,
-                        });
+                    if (hasDragged) {
+                        const nodeData = graph.getNodeAttributes(draggedNode);
+                        if (nodeData.x !== undefined && nodeData.y !== undefined) {
+                            debouncedUpdatePosition(draggedNode, {
+                                x: nodeData.x,
+                                y: nodeData.y,
+                            });
+                        }
                     }
                 }
             }
@@ -186,69 +370,76 @@
         });
     });
 
-    function getNodeColor(type: string) {
-        switch (type) {
-            case "core":
-                return "#e74c3c";
-            case "sub":
-                return "#3498db";
-            case "detail":
-                return "#2ecc71";
-            default:
-                return "#3a7bd5";
-        }
-    }
-
     onDestroy(() => {
-        if (sigma) {
-            sigma.kill();
-        }
-        if (unsubscribe) {
-            unsubscribe();
-        }
+        if (sigma) sigma.kill();
+        if (unsubscribe) unsubscribe();
     });
 
     function handleZoomIn() {
         if (!sigma) return;
-        const camera = sigma.getCamera();
-        camera.animatedZoom({ duration: 300 });
+        sigma.getCamera().animatedZoom({ duration: 250 });
     }
 
     function handleZoomOut() {
         if (!sigma) return;
-        const camera = sigma.getCamera();
-        camera.animatedUnzoom({ duration: 300 });
+        sigma.getCamera().animatedUnzoom({ duration: 250 });
     }
 
     function handleReset() {
         if (!sigma) return;
-        const camera = sigma.getCamera();
-        camera.animatedReset({ duration: 300 });
+        sigma.getCamera().animatedReset({ duration: 400 });
     }
 </script>
 
 <div class="graph-container">
     {#if loading}
         <div class="loading-container">
-            <LoadingSpinner size="large" message="Loading graph data..." />
+            <LoadingSpinner size="large" message="Loading graph..." />
         </div>
     {:else if error}
         <div class="error-container">
+            <div class="error-icon-wrap">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <line x1="12" y1="8" x2="12" y2="12"></line>
+                    <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                </svg>
+            </div>
             <p class="error-message">{error}</p>
-            <button
-                class="retry-button"
-                on:click={() => window.location.reload()}
-            >
-                Reload Page
+            <button class="retry-button" on:click={() => window.location.reload()}>
+                Retry
             </button>
         </div>
     {:else}
         <div class="graph-canvas" bind:this={container}></div>
 
         <div class="controls">
-            <button on:click={handleZoomIn} title="Zoom In">+</button>
-            <button on:click={handleZoomOut} title="Zoom Out">-</button>
-            <button on:click={handleReset} title="Reset View">⟲</button>
+            <button on:click={handleZoomIn} title="Zoom In" aria-label="Zoom in">
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <line x1="7" y1="2" x2="7" y2="12"></line>
+                    <line x1="2" y1="7" x2="12" y2="7"></line>
+                </svg>
+            </button>
+            <button on:click={handleZoomOut} title="Zoom Out" aria-label="Zoom out">
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <line x1="2" y1="7" x2="12" y2="7"></line>
+                </svg>
+            </button>
+            <div class="control-divider"></div>
+            <button on:click={handleReset} title="Reset View" aria-label="Reset view">
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <path d="M2 7a5 5 0 0 1 9.2-2.7"></path>
+                    <path d="M12 7a5 5 0 0 1-9.2 2.7"></path>
+                    <polyline points="11 2 11.2 4.7 8.5 4.3"></polyline>
+                    <polyline points="3 12 2.8 9.3 5.5 9.7"></polyline>
+                </svg>
+            </button>
+        </div>
+
+        <div class="graph-stats">
+            <span class="stat">{nodeCount.toLocaleString()} nodes</span>
+            <span class="stat-sep"></span>
+            <span class="stat">{edgeCount.toLocaleString()} edges</span>
         </div>
     {/if}
 </div>
@@ -258,6 +449,7 @@
         width: 100%;
         height: 100%;
         position: relative;
+        background: var(--color-void);
     }
 
     .graph-canvas {
@@ -265,36 +457,71 @@
         height: 100%;
     }
 
-    .controls {
-        position: absolute;
-        top: 20px;
-        right: 20px;
-        display: flex;
-        flex-direction: column;
-        gap: 10px;
-        background: var(--color-surface);
-        padding: 10px;
-        border-radius: 8px;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    /* Override sigma's default canvas background */
+    .graph-canvas :global(canvas) {
+        background: transparent !important;
     }
 
-    button {
-        width: 40px;
-        height: 40px;
+    .controls {
+        position: absolute;
+        bottom: 24px;
+        right: 24px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 2px;
+        background: var(--color-surface);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-md);
+        padding: 4px;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    }
+
+    .controls button {
+        width: 32px;
+        height: 32px;
         border: none;
-        background: var(--color-primary);
-        color: white;
-        border-radius: 4px;
+        background: transparent;
+        color: var(--color-text-secondary);
+        border-radius: var(--radius-sm);
         cursor: pointer;
-        font-size: 18px;
         display: flex;
         align-items: center;
         justify-content: center;
-        transition: opacity 0.2s;
+        transition: all 0.15s var(--ease-out);
     }
 
-    button:hover {
-        opacity: 0.8;
+    .controls button:hover {
+        background: var(--color-accent-dim);
+        color: var(--color-accent);
+    }
+
+    .control-divider {
+        width: 18px;
+        height: 1px;
+        background: var(--color-border);
+        margin: 2px 0;
+    }
+
+    .graph-stats {
+        position: absolute;
+        bottom: 24px;
+        left: 24px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-family: var(--font-mono);
+        font-size: 11px;
+        color: var(--color-text-muted);
+        letter-spacing: 0.02em;
+    }
+
+    .stat-sep {
+        width: 3px;
+        height: 3px;
+        background: var(--color-text-muted);
+        border-radius: 50%;
+        opacity: 0.5;
     }
 
     .loading-container,
@@ -305,30 +532,36 @@
         flex-direction: column;
         align-items: center;
         justify-content: center;
-        gap: 1.5rem;
+        gap: 1rem;
+    }
+
+    .error-icon-wrap {
+        color: var(--color-text-muted);
     }
 
     .error-message {
-        color: #e74c3c;
-        font-size: 1.2rem;
+        color: var(--color-text-secondary);
+        font-size: 13px;
         text-align: center;
-        max-width: 400px;
+        max-width: 300px;
+        font-weight: 300;
     }
 
     .retry-button {
-        background-color: var(--color-primary);
-        color: white;
-        border: none;
-        padding: 0.75rem 2rem;
-        border-radius: 4px;
+        background: var(--color-surface);
+        color: var(--color-text);
+        border: 1px solid var(--color-border);
+        padding: 8px 20px;
+        border-radius: var(--radius-sm);
         cursor: pointer;
-        font-size: 1rem;
-        transition: opacity 0.2s;
-        width: auto;
-        height: auto;
+        font-family: var(--font-body);
+        font-size: 13px;
+        font-weight: 400;
+        transition: all 0.2s var(--ease-out);
     }
 
     .retry-button:hover {
-        opacity: 0.8;
+        border-color: var(--color-border-focus);
+        background: var(--color-surface-raised);
     }
 </style>

@@ -27,7 +27,18 @@
       "Bash(gh repo view:*)",
       "Bash(git add:*)",
       "Bash(./scripts/test-all.sh:*)",
-      "WebFetch(domain:github.com)"
+      "WebFetch(domain:github.com)",
+      "Bash(curl -s http://localhost:8080/api/v1/graph)",
+      "Bash(curl -s -X POST http://localhost:8080/api/v1/vault/parses)",
+      "Bash(python3 -m json.tool)",
+      "Bash(npm install:*)",
+      "Bash(lsof -ti:8080)",
+      "Bash(xargs kill:*)",
+      "Bash(lsof -ti:5173)",
+      "Bash(curl -s http://localhost:8080/api/v1/health)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:5173/)",
+      "Bash(curl -s 'http://localhost:8080/api/v1/graph?level=0')",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(f''''Nodes: {len\\(d[\"\"nodes\"\"]\\)}, Edges: {len\\(d[\"\"edges\"\"]\\)}''''\\); [print\\(f''''  x={n[\"\"position\"\"][\"\"x\"\"]}, y={n[\"\"position\"\"][\"\"y\"\"]}''''\\) for n in d[''''nodes''''][:5]]\")"
     ],
     "deny": []
   }

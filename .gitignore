@@ -46,7 +46,7 @@ backend/data/memex-clone/
 backend/data/vault-clone/
 backend/data/*-clone/
 mnemosyne
-internal/api/static/assets/
+internal/api/static/
 frontend/dist/
 frontend/node_modules/
 .claude/settings.local.json

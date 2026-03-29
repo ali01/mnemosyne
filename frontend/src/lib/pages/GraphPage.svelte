@@ -2,12 +2,28 @@
   import GraphVisualizer from '$lib/components/GraphVisualizer.svelte';
   import SearchBar from '$lib/components/SearchBar.svelte';
   import { navigate } from '$lib/router';
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
 
   let mounted = false;
+  let graphKey = 0;
+  let eventSource: EventSource | null = null;
 
   onMount(() => {
     mounted = true;
+
+    // Listen for vault changes via SSE
+    eventSource = new EventSource('/api/v1/events');
+    eventSource.addEventListener('graph-updated', () => {
+      // Remount GraphVisualizer to reload data
+      graphKey++;
+    });
+  });
+
+  onDestroy(() => {
+    if (eventSource) {
+      eventSource.close();
+      eventSource = null;
+    }
   });
 
   function handleSearchSelect(event: CustomEvent) {
@@ -37,7 +53,9 @@
         <SearchBar on:select={handleSearchSelect} />
       </div>
     </div>
-    <GraphVisualizer />
+    {#key graphKey}
+      <GraphVisualizer />
+    {/key}
   {/if}
 </main>
 

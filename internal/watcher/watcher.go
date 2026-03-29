@@ -22,6 +22,7 @@ type Watcher struct {
 	debounce  time.Duration
 	done      chan struct{}
 	wg        sync.WaitGroup
+	onChange  func() // called after changes are processed
 
 	mu      sync.Mutex
 	pending map[string]fsnotify.Op
@@ -43,6 +44,11 @@ func New(idx *indexer.Indexer, vaultPath string) (*Watcher, error) {
 		done:      make(chan struct{}),
 		pending:   make(map[string]fsnotify.Op),
 	}, nil
+}
+
+// SetOnChange sets a callback that fires after vault changes are indexed.
+func (w *Watcher) SetOnChange(fn func()) {
+	w.onChange = fn
 }
 
 // Start begins watching the vault directory recursively.
@@ -139,6 +145,10 @@ func (w *Watcher) flush() {
 				log.Printf("Failed to index %s: %v", relPath, err)
 			}
 		}
+	}
+
+	if len(pending) > 0 && w.onChange != nil {
+		w.onChange()
 	}
 }
 

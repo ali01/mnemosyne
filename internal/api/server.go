@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"sync"
 
 	"github.com/ali01/mnemosyne/internal/indexer"
 	"github.com/ali01/mnemosyne/internal/store"
@@ -18,18 +19,23 @@ type Server struct {
 	indexer *indexer.Indexer
 	mux     *http.ServeMux
 	port    int
+
+	sseClients   map[chan struct{}]struct{}
+	sseClientsMu sync.Mutex
 }
 
 // NewServer creates a new HTTP server.
 func NewServer(s *store.Store, idx *indexer.Indexer, staticFS fs.FS, port int) *Server {
 	srv := &Server{
-		store:   s,
-		indexer: idx,
-		mux:     http.NewServeMux(),
-		port:    port,
+		store:      s,
+		indexer:    idx,
+		mux:        http.NewServeMux(),
+		port:       port,
+		sseClients: make(map[chan struct{}]struct{}),
 	}
 
 	// API routes
+	srv.mux.HandleFunc("GET /api/v1/events", srv.handleSSE)
 	srv.mux.HandleFunc("GET /api/v1/health", srv.handleHealth)
 	srv.mux.HandleFunc("GET /api/v1/graph", srv.handleGetGraph)
 	srv.mux.HandleFunc("GET /api/v1/nodes/search", srv.handleSearchNodes)
@@ -57,6 +63,56 @@ func (s *Server) ListenAndServe() error {
 // Handler returns the http.Handler for testing.
 func (s *Server) Handler() http.Handler {
 	return corsMiddleware(s.mux)
+}
+
+// NotifyChange broadcasts a graph-changed event to all SSE clients.
+func (s *Server) NotifyChange() {
+	s.sseClientsMu.Lock()
+	defer s.sseClientsMu.Unlock()
+	for ch := range s.sseClients {
+		select {
+		case ch <- struct{}{}:
+		default:
+		}
+	}
+}
+
+// handleSSE streams server-sent events to the client.
+func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request) {
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "Streaming not supported", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+
+	ch := make(chan struct{}, 1)
+	s.sseClientsMu.Lock()
+	s.sseClients[ch] = struct{}{}
+	s.sseClientsMu.Unlock()
+
+	defer func() {
+		s.sseClientsMu.Lock()
+		delete(s.sseClients, ch)
+		s.sseClientsMu.Unlock()
+	}()
+
+	// Send initial connected event
+	fmt.Fprintf(w, "event: connected\ndata: ok\n\n")
+	flusher.Flush()
+
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case <-ch:
+			fmt.Fprintf(w, "event: graph-updated\ndata: reload\n\n")
+			flusher.Flush()
+		}
+	}
 }
 
 // spaHandler serves static files and falls back to index.html for unmatched routes.

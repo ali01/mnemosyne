@@ -1,145 +1,86 @@
 # Performance Benchmarks
 
-This document tracks performance benchmarks for the Mnemosyne backend, providing a baseline for optimization efforts and capacity planning.
+## Overview
 
-## Executive Summary
+Mnemosyne indexes Obsidian vaults into SQLite and serves an interactive graph visualization. Key performance characteristics:
 
-The Mnemosyne backend demonstrates excellent performance characteristics suitable for handling large Obsidian vaults with up to 50,000 nodes:
+- **Vault parsing**: Sub-millisecond per file for typical documents
+- **Full index** (1,588 files): ~130ms parse + ~200ms DB write = ~330ms total
+- **Link resolution**: O(1) lookups (12-23ns)
+- **Incremental re-index**: Same as full index (re-parses entire vault for correct link resolution)
 
-- **Vault parsing**: Sub-millisecond processing for typical documents
-- **Link resolution**: O(1) lookups with 12-23ns response times
-- **Memory usage**: Linear scaling with content size
-- **Validation**: Sub-microsecond node validation
+## Vault Parser
 
-## Vault Parser Performance
+### WikiLink Extraction
 
-### Link Extraction (`ExtractWikiLinks`)
+| Pattern Type | Time/Op | Memory/Op | Allocations |
+|---|---|---|---|
+| Simple | 850 ns | 547 B | 5 |
+| Multiple links | 1,394 ns | 1,160 B | 11 |
+| Complex patterns | 1,838 ns | 1,176 B | 12 |
+| Large documents | 1.13 ms | 358 KB | 3,010 |
 
-| Pattern Type      | Time/Op  | Memory/Op | Allocations |
-|-------------------|----------|-----------|-------------|
-| Simple            | 850 ns   | 547 B     | 5           |
-| Multiple links    | 1,394 ns | 1,160 B   | 11          |
-| Complex patterns  | 1,838 ns | 1,176 B   | 12          |
-| Large documents   | 1.13 ms  | 358 KB    | 3,010       |
+### Frontmatter Parsing
 
-### Frontmatter Parsing (`ExtractFrontmatter`)
+| Document Size | Time/Op | Memory/Op | Allocations |
+|---|---|---|---|
+| Minimal | 3.99 us | 14.6 KB | 85 |
+| Typical | 12.06 us | 21.6 KB | 233 |
+| Large | 77.85 us | 77.2 KB | 1,258 |
 
-| Document Size | Time/Op  | Memory/Op | Allocations |
-|---------------|----------|-----------|-------------|
-| Minimal       | 3.99 μs  | 14.6 KB   | 85          |
-| Typical       | 12.06 μs | 21.6 KB   | 233         |
-| Large         | 77.85 μs | 77.2 KB   | 1,258       |
+### Link Resolution
 
-### Link Resolution (`LinkResolver`)
+Constant time regardless of vault size (10 to 10,000 files):
 
-Performance remains constant regardless of vault size (10 to 10,000 files):
+| Lookup Type | Time/Op | Memory/Op |
+|---|---|---|
+| Exact path | 12.5 ns | 0 B |
+| Basename | 23.4 ns | 0 B |
+| Normalized | 118 ns | 56 B |
 
-| Lookup Type | Time/Op | Memory/Op | Allocations |
-|-------------|---------|-----------|-------------|
-| Exact path  | 12.5 ns | 0 B       | 0           |
-| Basename    | 23.4 ns | 0 B       | 0           |
-| Normalized  | 118 ns  | 56 B      | 4           |
-| Relative    | 113 ns  | 80 B      | 3           |
+### Full Document Processing
 
-### Full Document Processing (`ProcessMarkdownReader`)
+| Document Type | Time/Op | Memory/Op |
+|---|---|---|
+| Minimal | 4.53 us | 15.3 KB |
+| Typical | 9.15 us | 19.1 KB |
+| Large | 853 us | 375 KB |
 
-| Document Type | Time/Op | Memory/Op | Allocations |
-|---------------|---------|-----------|-------------|
-| Minimal       | 4.53 μs | 15.3 KB   | 97          |
-| Typical       | 9.15 μs | 19.1 KB   | 162         |
-| Large         | 853 μs  | 375 KB    | 2,019       |
+## Real Vault Performance
 
-## Data Model Performance
+Tested with a 1,588-file Obsidian vault:
 
-### VaultNode Serialization
-
-#### Large Content Scaling
-
-| Content Size | Time/Op  | Memory/Op | Allocations |
-|--------------|----------|-----------|-------------|
-| 1 KB         | 4.8 μs   | 3.1 KB    | 14          |
-| 10 KB        | 30.7 μs  | 21.4 KB   | 14          |
-| 100 KB       | 288 μs   | 219 KB    | 14          |
-| 1 MB         | 2.82 ms  | 2.43 MB   | 18          |
-| 10 MB        | 28.3 ms  | 32.0 MB   | 23          |
-
-#### Complex Metadata Performance
-
-| Field Count | Time/Op | Memory/Op | Allocations |
-|-------------|---------|-----------|-------------|
-| 10          | 13.6 μs | 12.9 KB   | 321         |
-| 50          | 60.6 μs | 59.8 KB   | 1,565       |
-| 100         | 123 μs  | 120 KB    | 3,117       |
-| 500         | 646 μs  | 639 KB    | 15,525      |
-
-### VaultEdge Serialization
-
-| Display Text Size | Time/Op | Memory/Op | Allocations |
-|-------------------|---------|-----------|-------------|
-| Empty             | 1.10 μs | 673 B     | 12          |
-| 50 chars          | 1.36 μs | 817 B     | 13          |
-| 200 chars         | 1.84 μs | 1.12 KB   | 13          |
-| 1,000 chars       | 4.17 μs | 2.84 KB   | 13          |
-| 5,000 chars       | 15.6 μs | 11.3 KB   | 13          |
-
-### Validation Performance
-
-- **VaultNode validation**: 398 ns/op with 280 B memory and 5 allocations
+| Operation | Time |
+|---|---|
+| Full vault parse (4 workers) | ~130ms |
+| Graph building | ~1.2ms |
+| SQLite bulk insert (855 nodes + 518 edges) | ~200ms |
+| Full index (parse + build + store) | ~330ms |
+| API graph response | <50ms |
+| FTS5 search query | <10ms |
 
 ## Capacity Planning
 
-Based on these benchmarks:
-
-### Vault Size Estimates
-
-For a 50,000 node vault:
-- **Parsing time**: ~457 ms for typical documents (9.15 μs × 50,000)
-- **Memory usage**: ~955 MB for typical nodes (19.1 KB × 50,000)
-- **Link resolution**: Constant time lookups regardless of vault size
-
-### Concurrent Processing
-
-The parser supports parallel processing with configurable worker counts:
-- Linear speedup up to CPU core count
-- Optimal worker count typically equals CPU cores
-
-## Performance Considerations
-
-### Strengths
-1. **O(1) link resolution**: Excellent scalability for large vaults
-2. **Linear memory scaling**: Predictable resource usage
-3. **Low allocation count**: Efficient memory management for most operations
-
-### Areas to Monitor
-1. **Metadata serialization**: High allocation count (15,525 for 500 fields)
-2. **Large content**: Consider lazy loading for documents > 100KB
-3. **Concurrent writes**: Database connection pooling for high throughput
-
-## Testing Environment
-
-- **Platform**: Darwin (macOS)
-- **Go Version**: 1.23.0
-- **CPU**: Benchmarks run with GOMAXPROCS=14
+For a 50,000 node vault (estimated):
+- **Parsing time**: ~457ms (9.15us x 50,000)
+- **Memory**: ~955 MB in-memory during parse (19.1 KB x 50,000)
+- **SQLite DB size**: ~50-100 MB
+- **Graph API response**: May need pagination for acceptable latency
 
 ## Running Benchmarks
 
 ```bash
-# Run all benchmarks
-go test -bench=. -benchmem ./...
-
-# Run specific package benchmarks
 go test -bench=. -benchmem ./internal/vault/...
 go test -bench=. -benchmem ./internal/models/...
 
-# Run with CPU profiling
-go test -bench=. -benchmem -cpuprofile=cpu.prof ./internal/vault/...
-
-# Analyze profile
+# With profiling
+go test -bench=. -cpuprofile=cpu.prof ./internal/vault/...
 go tool pprof cpu.prof
 ```
 
-## Benchmark History
+## Test Environment
 
-- **2025-06-23**: Initial benchmark documentation
-  - Vault parser: 94% test coverage
-  - Model validation: Comprehensive test suite added
+- Platform: Darwin (macOS)
+- Go: 1.23+
+- SQLite: modernc.org/sqlite (pure Go)
+- CPU: GOMAXPROCS=14

@@ -164,21 +164,30 @@
                     iterations: 300,
                     settings: {
                         gravity: 0.3,
-                        scalingRatio: 250,
+                        scalingRatio: 500,
                         barnesHutOptimize: false,
                         strongGravityMode: true,
                         slowDown: 5,
                     },
                 });
 
-                // Seed each node's position near its community centroid
+                // Seed each node near its community centroid
+                // High-degree nodes go closer to center, low-degree at the edges
                 for (const [cid, members] of communities) {
                     const cx = metaGraph.getNodeAttribute(cid, "x");
                     const cy = metaGraph.getNodeAttribute(cid, "y");
-                    const spread = Math.sqrt(members.length) * 18;
+                    const baseSpread = Math.sqrt(members.length) * 16;
+                    const maxDeg = Math.max(...members.map((n) => graph.degree(n)), 1);
                     for (const node of members) {
-                        graph.setNodeAttribute(node, "x", cx + (Math.random() - 0.5) * spread);
-                        graph.setNodeAttribute(node, "y", cy + (Math.random() - 0.5) * spread);
+                        const degree = graph.degree(node);
+                        // base distance from center: 0 for highest degree, 1 for lowest
+                        const dist = 1 - degree / maxDeg;
+                        // add randomness so same-degree nodes don't form rings
+                        const jitter = 0.3 + Math.random() * 0.7;
+                        const r = dist * baseSpread * jitter + Math.random() * baseSpread * 0.3;
+                        const angle = Math.random() * Math.PI * 2;
+                        graph.setNodeAttribute(node, "x", cx + Math.cos(angle) * r);
+                        graph.setNodeAttribute(node, "y", cy + Math.sin(angle) * r);
                     }
                 }
 
@@ -249,10 +258,10 @@
             labelColor: { color: "rgba(200, 202, 208, 0.85)" },
             labelFont: "DM Sans, sans-serif",
             labelWeight: "300",
-            labelSize: 11,
-            labelRenderedSizeThreshold: 6,
-            labelDensity: 0.4,
-            labelGridCellSize: 150,
+            labelSize: 10,
+            labelRenderedSizeThreshold: 4,
+            labelDensity: 0.8,
+            labelGridCellSize: 120,
             minZoomRatio: 0.005,
             maxZoomRatio: 30,
             minEdgeThickness: 0.4,
@@ -264,7 +273,26 @@
                 const weight = settings.labelWeight;
                 context.fillStyle = "rgba(200, 202, 208, 0.85)";
                 context.font = `${weight} ${size}px ${font}`;
-                context.fillText(data.label, data.x + data.size + 3, data.y + size / 3);
+
+                const maxWidth = 100;
+                const lineHeight = size * 1.2;
+                const x = data.x + data.size + 3;
+                const words = data.label.split(" ");
+                let line = "";
+                let lineIndex = 0;
+                const startY = data.y + size / 3;
+
+                for (let i = 0; i < words.length; i++) {
+                    const testLine = line ? line + " " + words[i] : words[i];
+                    if (context.measureText(testLine).width > maxWidth && line) {
+                        context.fillText(line, x, startY + lineIndex * lineHeight);
+                        line = words[i];
+                        lineIndex++;
+                    } else {
+                        line = testLine;
+                    }
+                }
+                context.fillText(line, x, startY + lineIndex * lineHeight);
             },
             defaultDrawNodeHover: (context: CanvasRenderingContext2D, data: any, settings: any) => {
                 const size = settings.labelSize;
@@ -276,11 +304,28 @@
                 const bgColor = "rgba(14, 14, 22, 0.92)";
                 const borderColor = "rgba(123, 140, 255, 0.25)";
                 const labelColor = "#e0e2e8";
+                const maxWidth = 120;
+                const lineHeight = size * 1.2;
 
                 if (typeof data.label === "string") {
-                    const textWidth = context.measureText(data.label).width;
+                    // Wrap text into lines
+                    const words = data.label.split(" ");
+                    const lines: string[] = [];
+                    let line = "";
+                    for (const word of words) {
+                        const testLine = line ? line + " " + word : word;
+                        if (context.measureText(testLine).width > maxWidth && line) {
+                            lines.push(line);
+                            line = word;
+                        } else {
+                            line = testLine;
+                        }
+                    }
+                    lines.push(line);
+
+                    const textWidth = Math.min(maxWidth, Math.max(...lines.map((l) => context.measureText(l).width)));
                     const boxWidth = Math.round(textWidth + 8);
-                    const boxHeight = Math.round(size + 2 * PADDING);
+                    const boxHeight = Math.round(lines.length * lineHeight + 2 * PADDING);
                     const radius = Math.max(data.size, size / 2) + PADDING;
                     const xStart = data.x + radius;
 
@@ -311,6 +356,21 @@
                     context.arc(data.x, data.y, data.size + PADDING, 0, Math.PI * 2);
                     context.fillStyle = bgColor;
                     context.fill();
+
+                    // Node dot
+                    context.beginPath();
+                    context.arc(data.x, data.y, data.size, 0, Math.PI * 2);
+                    context.fillStyle = data.color;
+                    context.fill();
+
+                    // Label text (wrapped)
+                    context.fillStyle = labelColor;
+                    context.shadowBlur = 0;
+                    const textX = data.x + data.size + PADDING + 3;
+                    const textStartY = data.y - (lines.length - 1) * lineHeight / 2 + size / 3;
+                    for (let i = 0; i < lines.length; i++) {
+                        context.fillText(lines[i], textX, textStartY + i * lineHeight);
+                    }
                 } else {
                     context.beginPath();
                     context.arc(data.x, data.y, data.size + PADDING, 0, Math.PI * 2);
@@ -319,19 +379,12 @@
                     context.shadowColor = "rgba(0, 0, 0, 0.5)";
                     context.fill();
                     context.shadowBlur = 0;
-                }
 
-                // Node dot
-                context.beginPath();
-                context.arc(data.x, data.y, data.size, 0, Math.PI * 2);
-                context.fillStyle = data.color;
-                context.fill();
-
-                // Label text
-                if (typeof data.label === "string") {
-                    context.fillStyle = labelColor;
-                    context.shadowBlur = 0;
-                    context.fillText(data.label, data.x + data.size + PADDING + 3, data.y + size / 3);
+                    // Node dot
+                    context.beginPath();
+                    context.arc(data.x, data.y, data.size, 0, Math.PI * 2);
+                    context.fillStyle = data.color;
+                    context.fill();
                 }
             },
             nodeReducer: (node, data) => {

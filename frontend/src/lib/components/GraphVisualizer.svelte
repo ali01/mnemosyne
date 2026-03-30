@@ -238,7 +238,7 @@
             renderLabels: true,
             renderEdgeLabels: false,
             defaultNodeColor: "#7b8cff",
-            defaultEdgeColor: "rgba(255, 255, 255, 0.035)",
+            defaultEdgeColor: "#2C4060",
             defaultEdgeType: "line",
             labelColor: { color: "rgba(200, 202, 208, 0.85)" },
             labelFont: "DM Sans, sans-serif",
@@ -249,7 +249,7 @@
             labelGridCellSize: 120,
             minZoomRatio: 0.005,
             maxZoomRatio: 30,
-            minEdgeThickness: 0.4,
+            minEdgeThickness: 1,
             stagePadding: 40,
             defaultDrawNodeLabel: (context: CanvasRenderingContext2D, data: any, settings: any) => {
                 if (!data.label) return;
@@ -371,11 +371,11 @@
                     const src = graph.source(edge);
                     const tgt = graph.target(edge);
                     if (src === hoveredNode || tgt === hoveredNode) {
-                        res.color = "rgba(123, 140, 255, 0.25)";
+                        res.color = "#5E82AB";
                         res.size = 1;
                         res.zIndex = 1;
                     } else {
-                        res.color = "rgba(255, 255, 255, 0.008)";
+                        res.color = "#151C26";
                         res.zIndex = 0;
                     }
                 }

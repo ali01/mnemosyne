@@ -86,8 +86,8 @@ describe('SearchBar', () => {
 
 		const searchIcon = document.querySelector('.search-icon');
 		expect(searchIcon).toBeInTheDocument();
-		expect(searchIcon).toHaveAttribute('width', '16');
-		expect(searchIcon).toHaveAttribute('height', '16');
+		expect(searchIcon).toHaveAttribute('width', '14');
+		expect(searchIcon).toHaveAttribute('height', '14');
 		expect(searchIcon).toHaveAttribute('viewBox', '0 0 24 24');
 		expect(searchIcon).toHaveAttribute('fill', 'none');
 		expect(searchIcon).toHaveAttribute('stroke', 'currentColor');

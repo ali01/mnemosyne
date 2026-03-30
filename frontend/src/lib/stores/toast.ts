@@ -24,7 +24,7 @@ function createToastStore() {
 
     // Set auto-removal timeout and track it
     if (duration > 0) {
-      const timeoutId = window.setTimeout(() => {
+      const timeoutId = setTimeout(() => {
         removeToast(id);
       }, duration);
       timeouts.set(id, timeoutId);

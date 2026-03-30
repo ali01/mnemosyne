@@ -4,6 +4,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"flag"
 	"fmt"
 	"log"
 	"net/http"
@@ -21,9 +22,13 @@ import (
 )
 
 func main() {
+	portFlag := flag.Int("port", 0, "HTTP port to listen on (overrides config file)")
+	flag.IntVar(portFlag, "p", 0, "HTTP port to listen on (shorthand)")
+	flag.Parse()
+
 	cfgPath := config.DefaultConfigPath()
-	if len(os.Args) > 1 {
-		cfgPath = os.Args[1]
+	if flag.NArg() > 0 {
+		cfgPath = flag.Arg(0)
 	}
 
 	// Bootstrap config if it doesn't exist
@@ -36,6 +41,11 @@ func main() {
 	cfg, err := config.Load(cfgPath)
 	if err != nil {
 		log.Fatalf("Failed to load config: %v", err)
+	}
+
+	// Command-line port flag overrides config file
+	if *portFlag != 0 {
+		cfg.Port = *portFlag
 	}
 
 	dbPath := config.DBPath()

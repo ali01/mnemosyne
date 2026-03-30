@@ -32,46 +32,58 @@ CRITICAL: When you encounter a file reference (e.g., ROADMAP.md), use your Read 
 - `internal/store/` - SQLite data access (all queries in one file)
 - `internal/indexer/` - IndexManager: multi-vault parsing and DB synchronization
 - `internal/discovery/` - GRAPH.yaml scanning, graph membership (IsUnderPath)
+- `internal/search/` - Obsidian search query parser and evaluator (filter/group matching)
 - `internal/watcher/` - Per-vault fsnotify watcher with debouncing
-- `internal/api/` - net/http handlers, SSE endpoint, static file serving
-- `internal/vault/` - Markdown parser, WikiLink resolver, graph builder, node classifier
+- `internal/api/` - net/http handlers, SSE endpoint, filter/group evaluation, static file serving
+- `internal/vault/` - Markdown parser, WikiLink resolver, graph builder
 - `internal/models/` - Data structures (VaultNode, VaultEdge, NodePosition, Vault, GraphInfo)
 - `internal/config/` - YAML configuration loading
 
 ### Multi-Vault / Multi-Graph Model
-- **Config** at `~/.config/mnemosyne/config.yaml` defines `port` and `vaults` list
+- **Config** at `~/.config/mnemosyne/config.yaml` defines `port`, `vaults` list, and optional `home-graph`
 - Each vault directory can contain `GRAPH.yaml` files in subdirectories
 - Each `GRAPH.yaml` marks its directory as a graph root (includes all `.md` files below)
 - **No nested GRAPH.yaml**: sibling graphs OK, but ancestor/descendant is an error
 - Each node belongs to at most one graph
 - Positions are per-graph (independent layouts)
-- `GRAPH.yaml` can optionally contain `node_classification` config
+- `GRAPH.yaml` can optionally contain `filter` and `groups` for Obsidian-style filtering and coloring
+
+### Filter & Groups Pipeline
+- `GRAPH.yaml` defines `filter` (Obsidian search query) and `groups` (query + hex color pairs)
+- `internal/search/` parses queries into an AST and evaluates against node data (file path, title, tags, frontmatter)
+- Filter and groups are evaluated at API serving time in the handler, not during indexing
+- `graph_nodes` membership is unchanged by filter — positions survive filter changes
+- First matching group determines node color; unmatched nodes get frontend default color
 
 ### Frontend (Svelte + Vite + Sigma.js)
 - **Framework**: Plain Svelte (no SvelteKit) with Vite
 - **Graph Rendering**: Sigma.js with WebGL
-- **Layout**: ForceAtlas2 with Louvain community detection
-- **Routing**: Hash-based client-side router
+- **Layout**: ForceAtlas2 with Louvain community detection for spatial grouping (Louvain drives layout, not coloring)
+- **Node Coloring**: Group-based via API response `color` field; falls back to default `#7b8cff`
+- **Routing**: Path-based client-side router (History API pushState/popstate)
+- **Testing**: Vitest with jsdom, @testing-library/svelte, msw
 - **Key Files**:
-  - `frontend/src/App.svelte` - Root component with router, auto-redirects to first graph
+  - `frontend/src/App.svelte` - Root component with router, auto-redirects to home graph or first graph
   - `frontend/src/lib/components/GraphVisualizer.svelte` - Main graph component (accepts graphId)
   - `frontend/src/lib/pages/GraphPage.svelte` - Graph page with SSE listener and graph selector
   - `frontend/src/lib/pages/GraphListPage.svelte` - Graph/vault picker landing page
   - `frontend/src/lib/pages/NotePage.svelte` - Note detail page
-  - `frontend/src/lib/router.ts` - Hash-based router
+  - `frontend/src/lib/router.ts` - Path-based router
 
 ### Frontend Routes
-- `/#/` - Redirects to first graph, or shows GraphListPage
-- `/#/graphs/:graphId` - Graph visualization for a specific graph
-- `/#/graphs/:graphId/notes/:nodeId` - Note viewer with back-to-graph navigation
+- `/{vaultName}/{graphPath}` - Graph visualization (e.g., `/walros/memex`)
+- `/{vaultName}/{graphPath}/notes/{nodeId}` - Note viewer
+- `/` - Redirects to home graph, first available graph, or GraphListPage
 
 ## Commands
 
 ### Build & Run
 ```bash
-make build              # Build frontend + Go binary
+make                    # Build frontend + Go binary (default target)
+make run                # Build and run the binary
 ./mnemosyne             # Run (reads ~/.config/mnemosyne/config.yaml)
 ./mnemosyne config.yaml # Run with custom config path
+./mnemosyne -p 8080     # Override port via CLI flag
 ```
 
 ### Development
@@ -82,10 +94,11 @@ make test               # Run all Go tests
 
 ### Testing
 ```bash
-go test ./internal/... -count=1          # All tests
+go test ./internal/... -count=1          # All Go tests
 go test ./internal/store/... -v          # Store tests only
+go test ./internal/search/... -v         # Search parser tests
 go test ./internal/vault/... -v          # Vault parser tests
-go test -bench=. -benchmem ./internal/vault/...  # Benchmarks
+cd frontend && npx vitest run            # All frontend tests
 ```
 
 ## Configuration
@@ -93,8 +106,9 @@ go test -bench=. -benchmem ./internal/vault/...  # Benchmarks
 Global config at `~/.config/mnemosyne/config.yaml` (or CLI arg):
 
 ```yaml
-port: 5555          # Optional: HTTP port (default 5555)
-vaults:             # Required: list of vault root paths
+port: 5555              # Optional: HTTP port (default 5555)
+home-graph: walros/memex  # Optional: default graph for root URL redirect
+vaults:                 # Required: list of vault root paths
   - ~/home/walros
   - ~/home/research
 ```
@@ -102,29 +116,25 @@ vaults:             # Required: list of vault root paths
 Per-graph config in `GRAPH.yaml` (placed in any vault subdirectory):
 
 ```yaml
-name: "Custom Name"    # Optional: defaults to directory name
-node_classification:   # Optional: node type rules
-  default_node_type: note
-  node_types:
-    hub:
-      display_name: "Hub"
-      color: "#4ECDC4"
-      size_multiplier: 1.5
-  classification_rules:
-    - name: hub_prefix
-      priority: 2
-      type: filename_prefix
-      pattern: "~"
-      node_type: hub
+name: "Custom Name"                        # Optional: defaults to directory name
+filter: "path:memex/ OR path:z-templates/" # Optional: Obsidian search query (default: show all)
+groups:                                    # Optional: color groups, first match wins
+  - query: "tag:#open-question"
+    color: "#E5A84B"
+  - query: "path:memex/concepts"
+    color: "#5577CC"
+  - query: '[author:"Ali Yahya"]'
+    color: "#CC6655"
 ```
 
-### Classification Rule Types
-- `tag`: Match frontmatter tags
-- `filename_prefix`: Match start of filename
-- `filename_suffix`: Match end of filename (excluding .md)
-- `filename_match`: Exact filename match
-- `path_contains`: Directory name in path
-- `regex`: Regular expression on filename
+### Search Query Syntax (for filter and groups)
+- `path:VALUE` — file path contains VALUE (case-insensitive)
+- `tag:#VALUE` or `tag:VALUE` — node has this tag
+- `file:VALUE` — filename contains VALUE
+- `[field:"value"]` — frontmatter field match
+- bare text — title or filename contains text
+- `*` — match all
+- space = AND, `OR` = OR, `-` prefix = NOT, `(...)` = grouping
 
 ## Database Schema
 
@@ -148,7 +158,7 @@ Full-text search via FTS5 virtual table (`nodes_fts`) with automatic sync trigge
 |--------|----------|-------------|
 | GET | `/api/v1/health` | Health check |
 | GET | `/api/v1/graphs` | List all graphs with node counts |
-| GET | `/api/v1/graphs/{id}` | Graph-scoped nodes + edges + positions |
+| GET | `/api/v1/graphs/{id}` | Graph-scoped nodes (with colors) + edges + positions |
 | GET | `/api/v1/graphs/{id}/search?q=` | Full-text search within a graph |
 | PUT | `/api/v1/graphs/{id}/positions` | Batch update positions for a graph |
 | PUT | `/api/v1/graphs/{id}/positions/{nodeId}` | Update single position |
@@ -159,21 +169,25 @@ Full-text search via FTS5 virtual table (`nodes_fts`) with automatic sync trigge
 
 ## Testing Strategy
 
-All tests run against in-memory SQLite -- no external services needed.
+All Go tests run against in-memory SQLite -- no external services needed.
+Frontend tests use vitest with jsdom environment.
 
 ### Test Coverage
-- **Store**: 38 tests - Vault/graph CRUD, graph-scoped queries, vault-scoped replace, position independence
-- **Discovery**: 12 tests - GRAPH.yaml scanning, nesting validation, IsUnderPath
+- **Store**: 40 tests - Vault/graph CRUD, graph-scoped queries, GetGraphDataRaw, vault-scoped replace, position independence
+- **Discovery**: 12 tests - GRAPH.yaml scanning, filter/groups parsing, nesting validation, IsUnderPath
+- **Search**: 52 tests - Query parsing, all operator types, boolean logic, edge cases, matching
 - **Indexer**: 10 tests - Multi-vault indexing, sibling graphs, GRAPH.yaml lifecycle
 - **Watcher**: 8 tests - File detection, GRAPH.yaml support, onChange with graph IDs
-- **API**: 16 tests - All handlers, graph-scoped endpoints, CORS
+- **API**: 20 tests - All handlers, filter/group evaluation, graph-scoped endpoints, CORS
 - **Config**: 7 tests - Multi-vault format, defaults, validation
 - **Vault Parser**: Existing tests with 94% coverage
 - **Models**: Validation and serialization tests
+- **Frontend**: 136 tests - Component rendering, store behavior, accessibility, search, toast
 
 ### Running Tests
 ```bash
-go test ./internal/... -count=1 -timeout=120s
+go test ./internal/... -count=1 -timeout=120s   # All Go tests
+cd frontend && npx vitest run                    # All frontend tests
 ```
 
 ## Key Design Decisions
@@ -188,3 +202,5 @@ go test ./internal/... -count=1 -timeout=120s
 8. **No framework**: Uses Go standard library `net/http` (1.22+ ServeMux with path patterns).
 9. **Flat architecture**: No repository pattern, no service layer. Direct SQL in store module.
 10. **Frontmatter IDs**: Every markdown file needs a unique `id` field in frontmatter to be indexed. IDs must be globally unique across all vaults.
+11. **Filter/groups at serving time**: Evaluated in the API handler, not during indexing. Graph membership stays unchanged, positions survive filter changes.
+12. **Louvain for layout only**: Community detection drives spatial grouping in the two-level layout algorithm. Node colors come from GRAPH.yaml groups, not communities.

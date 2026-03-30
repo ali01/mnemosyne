@@ -1,20 +1,24 @@
-.PHONY: help build build-frontend dev test clean
-
-help:
-	@echo "Available commands:"
-	@echo "  make build          - Build the mnemosyne binary (includes frontend)"
-	@echo "  make build-frontend - Build only the frontend"
-	@echo "  make dev            - Run frontend dev server + Go backend"
-	@echo "  make test           - Run all Go tests"
-	@echo "  make clean          - Clean build artifacts"
-
-build-frontend:
-	cd frontend && npm install && npm run build
+.PHONY: build run help build-frontend dev test clean
 
 build: build-frontend
 	rm -rf internal/api/static/*
 	cp -R frontend/dist/* internal/api/static/
 	go build -o mnemosyne ./cmd/mnemosyne
+
+run: build
+	./mnemosyne
+
+help:
+	@echo "Available commands:"
+	@echo "  make              - Build the mnemosyne binary (includes frontend)"
+	@echo "  make run          - Build (if needed) and run the binary"
+	@echo "  make build-frontend - Build only the frontend"
+	@echo "  make dev          - Run frontend dev server + Go backend"
+	@echo "  make test         - Run all Go tests"
+	@echo "  make clean        - Clean build artifacts"
+
+build-frontend:
+	cd frontend && npm install && npm run build
 
 dev:
 	@echo "Starting dev servers..."

@@ -364,6 +364,83 @@ func (s *Store) GetGraphData(graphID int) (*models.Graph, error) {
 	return &models.Graph{Nodes: apiNodes, Edges: apiEdges}, nil
 }
 
+// GraphDataRaw holds rich graph data for handler-side transformation.
+type GraphDataRaw struct {
+	Config    string
+	Nodes     []models.VaultNode
+	Edges     []models.VaultEdge
+	Positions map[string]models.NodePosition
+}
+
+// GetGraphDataRaw returns full node/edge/position data plus graph config for a graph.
+// Unlike GetGraphData, this returns VaultNode (with tags, frontmatter) for filter/group evaluation.
+func (s *Store) GetGraphDataRaw(graphID int) (*GraphDataRaw, error) {
+	// Graph config
+	var config string
+	err := s.db.QueryRow(`SELECT COALESCE(config, '') FROM graphs WHERE id = ?`, graphID).Scan(&config)
+	if err != nil {
+		return nil, fmt.Errorf("get graph config: %w", err)
+	}
+
+	// Nodes in this graph (full data including content for frontmatter)
+	nodeRows, err := s.db.Query(`
+		SELECT n.id, n.vault_id, n.file_path, n.title, '', n.frontmatter, n.node_type, n.tags,
+			n.in_degree, n.out_degree, n.created_at, n.updated_at
+		FROM nodes n
+		JOIN graph_nodes gn ON gn.node_id = n.id
+		WHERE gn.graph_id = ?
+	`, graphID)
+	if err != nil {
+		return nil, fmt.Errorf("get graph nodes: %w", err)
+	}
+	defer nodeRows.Close()
+	nodes, err := scanNodes(nodeRows)
+	if err != nil {
+		return nil, fmt.Errorf("scan graph nodes: %w", err)
+	}
+
+	// Edges where both endpoints are in this graph
+	edgeRows, err := s.db.Query(`
+		SELECT e.id, e.source_id, e.target_id, e.edge_type, e.display_text, e.weight
+		FROM edges e
+		WHERE e.source_id IN (SELECT node_id FROM graph_nodes WHERE graph_id = ?)
+		  AND e.target_id IN (SELECT node_id FROM graph_nodes WHERE graph_id = ?)
+	`, graphID, graphID)
+	if err != nil {
+		return nil, fmt.Errorf("get graph edges: %w", err)
+	}
+	defer edgeRows.Close()
+	edges, err := scanEdges(edgeRows)
+	if err != nil {
+		return nil, fmt.Errorf("scan graph edges: %w", err)
+	}
+
+	// Positions
+	posRows, err := s.db.Query(`SELECT node_id, x, y, z, locked FROM node_positions WHERE graph_id = ?`, graphID)
+	if err != nil {
+		return nil, fmt.Errorf("get graph positions: %w", err)
+	}
+	defer posRows.Close()
+	posMap := make(map[string]models.NodePosition)
+	for posRows.Next() {
+		var p models.NodePosition
+		if err := posRows.Scan(&p.NodeID, &p.X, &p.Y, &p.Z, &p.Locked); err != nil {
+			return nil, err
+		}
+		posMap[p.NodeID] = p
+	}
+	if err := posRows.Err(); err != nil {
+		return nil, err
+	}
+
+	return &GraphDataRaw{
+		Config:    config,
+		Nodes:     nodes,
+		Edges:     edges,
+		Positions: posMap,
+	}, nil
+}
+
 // SearchInGraph performs full-text search scoped to a specific graph.
 func (s *Store) SearchInGraph(graphID int, query string) ([]models.VaultNode, error) {
 	rows, err := s.db.Query(`

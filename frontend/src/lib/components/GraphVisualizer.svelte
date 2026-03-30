@@ -82,8 +82,7 @@
                     y: hasPosition ? node.position.y : (Math.random() - 0.5) * 200,
                     size: 3,
                     label: node.title,
-                    color: "#7b8cff",
-                    metadata: node.metadata,
+                    color: node.color || "#7b8cff",
                 });
             });
 
@@ -104,25 +103,8 @@
             });
             orphans.forEach((node) => graph.dropNode(node));
 
-            // Detect communities with Louvain and assign colors
-            const communityPalette = [
-                "#7b8cff", "#ff6b6b", "#6bffb8", "#ffb86b", "#6bc5ff",
-                "#d46bff", "#ff6bb5", "#6bfff0", "#c8ff6b", "#ff916b",
-                "#8b6bff", "#6bff8b", "#ff6b6b", "#6bd4ff", "#ffe06b",
-                "#a06bff", "#ff6be0", "#6bffe0", "#ffaa6b", "#6b9fff",
-            ];
+            // Run Louvain community detection for spatial layout (not for coloring)
             louvain.assign(graph, { resolution: 1.0 });
-            const communityColors = new Map<string, string>();
-            let colorIdx = 0;
-            graph.forEachNode((node, attrs) => {
-                const community = String(attrs.community);
-                if (!communityColors.has(community)) {
-                    communityColors.set(community, communityPalette[colorIdx % communityPalette.length]);
-                    colorIdx++;
-                }
-                graph.setNodeAttribute(node, "color", communityColors.get(community));
-                graph.setNodeAttribute(node, "communityColor", communityColors.get(community));
-            });
 
             // Run layout if no saved positions
             const needsLayout = data.nodes.every(

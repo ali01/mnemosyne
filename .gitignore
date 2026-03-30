@@ -7,6 +7,10 @@ dist/
 build/
 .svelte-kit/
 *.out
+/mnemosyne
+internal/api/static/
+frontend/dist/
+frontend/node_modules/
 
 # IDE
 .vscode/
@@ -40,13 +44,8 @@ coverage/
 tmp/
 temp/
 
-# Vault clone directory
-memex-clone/
-backend/data/memex-clone/
-backend/data/vault-clone/
-backend/data/*-clone/
-/mnemosyne
-internal/api/static/
-frontend/dist/
-frontend/node_modules/
+# Config
 .claude/settings.local.json
+
+# Git Worktrees
+.claude/worktrees

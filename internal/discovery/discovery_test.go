@@ -75,29 +75,26 @@ func TestDiscoverSkipsHiddenDirs(t *testing.T) {
 	assert.Len(t, defs, 1)
 }
 
-func TestDiscoverWithNodeClassification(t *testing.T) {
+func TestDiscoverWithFilterAndGroups(t *testing.T) {
 	dir := t.TempDir()
 	createFile(t, dir, "GRAPH.yaml", `
-node_classification:
-  default_node_type: note
-  node_types:
-    hub:
-      display_name: Hub
-      color: "#4ECDC4"
-  classification_rules:
-    - name: hub_prefix
-      priority: 2
-      type: filename_prefix
-      pattern: "~"
-      node_type: hub
+filter: "path:memex/ OR path:z-templates/"
+groups:
+  - query: "tag:#open-question"
+    color: "#E5A84B"
+  - query: "path:memex/concepts"
+    color: "#5577CC"
 `)
 
 	defs, err := Discover(dir)
 	require.NoError(t, err)
 	require.Len(t, defs, 1)
-	require.NotNil(t, defs[0].NodeClassification)
-	assert.Equal(t, "note", defs[0].NodeClassification.DefaultNodeType)
-	assert.Len(t, defs[0].NodeClassification.ClassificationRules, 1)
+	assert.Equal(t, "path:memex/ OR path:z-templates/", defs[0].Filter)
+	require.Len(t, defs[0].Groups, 2)
+	assert.Equal(t, "tag:#open-question", defs[0].Groups[0].Query)
+	assert.Equal(t, "#E5A84B", defs[0].Groups[0].Color)
+	assert.Equal(t, "path:memex/concepts", defs[0].Groups[1].Query)
+	assert.Equal(t, "#5577CC", defs[0].Groups[1].Color)
 }
 
 func TestDiscoverEmptyGraphYAML(t *testing.T) {
@@ -107,7 +104,8 @@ func TestDiscoverEmptyGraphYAML(t *testing.T) {
 	defs, err := Discover(dir)
 	require.NoError(t, err)
 	assert.Len(t, defs, 1)
-	assert.Nil(t, defs[0].NodeClassification)
+	assert.Empty(t, defs[0].Filter)
+	assert.Empty(t, defs[0].Groups)
 }
 
 func TestDiscoverNoGraphYAML(t *testing.T) {

@@ -33,27 +33,6 @@ func createTestMarkdownFile(path, id, title string, tags []string, links []WikiL
 	}
 }
 
-// Helper function to create a test NodeClassifier
-func createTestNodeClassifier() *NodeClassifier {
-	rules := []ClassificationRule{
-		{
-			Name:     "index_tag",
-			Priority: 1,
-			Matcher:  func(f *MarkdownFile) bool { return hasTag(f, "index") },
-			NodeType: "index",
-		},
-		{
-			Name:     "hub_prefix",
-			Priority: 2,
-			Matcher:  func(f *MarkdownFile) bool { return f.Path[0] == '~' },
-			NodeType: "hub",
-		},
-	}
-
-	classifier, _ := NewNodeClassifierWithRules(rules, "note")
-	return classifier
-}
-
 // Helper function to find a node by ID in a slice of nodes
 func findNodeByID(nodes []models.VaultNode, id string) *models.VaultNode {
 	for i := range nodes {
@@ -65,40 +44,26 @@ func findNodeByID(nodes []models.VaultNode, id string) *models.VaultNode {
 }
 
 func TestNewGraphBuilder(t *testing.T) {
-	classifier := createTestNodeClassifier()
-
 	t.Run("with default config", func(t *testing.T) {
-		config := GraphBuilderConfig{}
-		gb := NewGraphBuilder(classifier, config)
-
+		gb := NewGraphBuilder(GraphBuilderConfig{})
 		assert.NotNil(t, gb)
-		assert.Equal(t, classifier, gb.classifier)
 		assert.Equal(t, 1.0, gb.config.DefaultWeight)
 		assert.False(t, gb.config.SkipOrphans)
 	})
 
 	t.Run("with custom config", func(t *testing.T) {
-		config := GraphBuilderConfig{
+		gb := NewGraphBuilder(GraphBuilderConfig{
 			DefaultWeight: 2.5,
 			SkipOrphans:   true,
-		}
-		gb := NewGraphBuilder(classifier, config)
-
+		})
 		assert.NotNil(t, gb)
 		assert.Equal(t, 2.5, gb.config.DefaultWeight)
 		assert.True(t, gb.config.SkipOrphans)
 	})
-
-	t.Run("nil classifier allowed", func(t *testing.T) {
-		gb := NewGraphBuilder(nil, GraphBuilderConfig{})
-		assert.NotNil(t, gb)
-		assert.Nil(t, gb.classifier)
-	})
 }
 
 func TestBuildGraph_Simple(t *testing.T) {
-	classifier := createTestNodeClassifier()
-	gb := NewGraphBuilder(classifier, GraphBuilderConfig{})
+	gb := NewGraphBuilder(GraphBuilderConfig{})
 
 	// Create test files
 	file1 := createTestMarkdownFile("index.md", "index", "Index", []string{"index"}, []WikiLink{
@@ -148,7 +113,6 @@ func TestBuildGraph_Simple(t *testing.T) {
 	}
 	require.NotNil(t, indexNode)
 	assert.Equal(t, "Index", indexNode.Title)
-	assert.Equal(t, "index", indexNode.NodeType)
 	assert.Equal(t, 2, indexNode.OutDegree)
 	assert.Equal(t, 2, indexNode.InDegree)
 
@@ -167,7 +131,7 @@ func TestBuildGraph_Simple(t *testing.T) {
 func TestBuildGraph_WithDuplicateIDs(t *testing.T) {
 	// Test that duplicate detection works properly
 	// This simulates a scenario where the parser might have multiple files with same ID
-	gb := NewGraphBuilder(nil, GraphBuilderConfig{})
+	gb := NewGraphBuilder(GraphBuilderConfig{})
 
 	// Override buildNodes to test duplicate detection logic
 	files := map[string]*MarkdownFile{
@@ -203,7 +167,7 @@ func TestBuildGraph_WithDuplicateIDs(t *testing.T) {
 }
 
 func TestBuildGraph_WithMissingID(t *testing.T) {
-	gb := NewGraphBuilder(nil, GraphBuilderConfig{})
+	gb := NewGraphBuilder(GraphBuilderConfig{})
 
 	fileWithID := createTestMarkdownFile("with-id.md", "valid", "Valid", nil, nil)
 	fileWithoutID := &MarkdownFile{
@@ -230,7 +194,7 @@ func TestBuildGraph_WithMissingID(t *testing.T) {
 }
 
 func TestBuildGraph_WithUnresolvedLinks(t *testing.T) {
-	gb := NewGraphBuilder(nil, GraphBuilderConfig{})
+	gb := NewGraphBuilder(GraphBuilderConfig{})
 
 	file1 := createTestMarkdownFile("note.md", "note", "Note", nil, []WikiLink{
 		{Target: "existing", LinkType: "wikilink"},
@@ -270,7 +234,7 @@ func TestBuildGraph_WithUnresolvedLinks(t *testing.T) {
 
 func TestBuildGraph_WithGraphExcludedLinks(t *testing.T) {
 	// Test links to files that exist but aren't in the graph (no ID)
-	gb := NewGraphBuilder(nil, GraphBuilderConfig{})
+	gb := NewGraphBuilder(GraphBuilderConfig{})
 
 	fileWithID := createTestMarkdownFile("with-id.md", "source", "Source", nil, []WikiLink{
 		{Target: "no-id", LinkType: "wikilink"},
@@ -306,7 +270,7 @@ func TestBuildGraph_WithGraphExcludedLinks(t *testing.T) {
 
 func TestBuildGraph_WithOrphanedNodes(t *testing.T) {
 	t.Run("include orphans", func(t *testing.T) {
-		gb := NewGraphBuilder(nil, GraphBuilderConfig{SkipOrphans: false})
+		gb := NewGraphBuilder(GraphBuilderConfig{SkipOrphans: false})
 
 		file1 := createTestMarkdownFile("connected.md", "connected", "Connected", nil, []WikiLink{
 			{Target: "target", LinkType: "wikilink"},
@@ -336,7 +300,7 @@ func TestBuildGraph_WithOrphanedNodes(t *testing.T) {
 	})
 
 	t.Run("skip orphans", func(t *testing.T) {
-		gb := NewGraphBuilder(nil, GraphBuilderConfig{SkipOrphans: true})
+		gb := NewGraphBuilder(GraphBuilderConfig{SkipOrphans: true})
 
 		file1 := createTestMarkdownFile("connected.md", "connected", "Connected", nil, []WikiLink{
 			{Target: "target", LinkType: "wikilink"},
@@ -367,7 +331,7 @@ func TestBuildGraph_WithOrphanedNodes(t *testing.T) {
 }
 
 func TestBuildGraph_WithEmbedLinks(t *testing.T) {
-	gb := NewGraphBuilder(nil, GraphBuilderConfig{})
+	gb := NewGraphBuilder(GraphBuilderConfig{})
 
 	file1 := createTestMarkdownFile("note.md", "note", "Note", nil, []WikiLink{
 		{Target: "image", LinkType: "embed", DisplayText: "Image"},
@@ -410,7 +374,7 @@ func TestBuildGraph_WithEmbedLinks(t *testing.T) {
 }
 
 func TestBuildGraph_WithSelfReferentialLinks(t *testing.T) {
-	gb := NewGraphBuilder(nil, GraphBuilderConfig{})
+	gb := NewGraphBuilder(GraphBuilderConfig{})
 
 	file := createTestMarkdownFile("self.md", "self", "Self", nil, []WikiLink{
 		{Target: "self", LinkType: "wikilink", DisplayText: "Self Reference"},
@@ -444,7 +408,7 @@ func TestBuildGraph_WithSelfReferentialLinks(t *testing.T) {
 }
 
 func TestBuildGraph_EdgeDeduplicationWithinSingleFile(t *testing.T) {
-	gb := NewGraphBuilder(nil, GraphBuilderConfig{})
+	gb := NewGraphBuilder(GraphBuilderConfig{})
 
 	// Test case: Single file with duplicate links to same target
 	links := []WikiLink{
@@ -492,7 +456,7 @@ func TestBuildGraph_EdgeDeduplicationWithinSingleFile(t *testing.T) {
 }
 
 func TestBuildGraph_NilInput(t *testing.T) {
-	gb := NewGraphBuilder(nil, GraphBuilderConfig{})
+	gb := NewGraphBuilder(GraphBuilderConfig{})
 
 	result, err := gb.BuildGraph(nil)
 	assert.Error(t, err)
@@ -501,7 +465,7 @@ func TestBuildGraph_NilInput(t *testing.T) {
 }
 
 func TestCreateNode_WithMetadata(t *testing.T) {
-	gb := NewGraphBuilder(createTestNodeClassifier(), GraphBuilderConfig{})
+	gb := NewGraphBuilder(GraphBuilderConfig{})
 
 	frontmatter := &FrontmatterData{
 		ID:   "test",
@@ -532,7 +496,7 @@ func TestCreateNode_WithMetadata(t *testing.T) {
 	assert.Equal(t, models.StringArray{"tag1", "tag2"}, node.Tags)
 	assert.Equal(t, "Test content", node.Content)
 	assert.Equal(t, "test.md", node.FilePath)
-	assert.Equal(t, "note", node.NodeType) // Default from classifier
+	assert.Equal(t, "", node.NodeType)
 
 	// Verify metadata
 	assert.NotNil(t, node.Metadata)
@@ -542,7 +506,7 @@ func TestCreateNode_WithMetadata(t *testing.T) {
 }
 
 func TestCreateEdge_WithVariations(t *testing.T) {
-	gb := NewGraphBuilder(nil, GraphBuilderConfig{DefaultWeight: 1.5})
+	gb := NewGraphBuilder(GraphBuilderConfig{DefaultWeight: 1.5})
 	testTime := time.Date(2023, 1, 1, 12, 0, 0, 0, time.UTC)
 
 	t.Run("basic edge", func(t *testing.T) {
@@ -631,7 +595,7 @@ func TestCreateEdge_WithVariations(t *testing.T) {
 
 func TestBuildGraph_DeterministicOutput(t *testing.T) {
 	// Test that multiple runs produce identical output order
-	gb := NewGraphBuilder(nil, GraphBuilderConfig{})
+	gb := NewGraphBuilder(GraphBuilderConfig{})
 
 	// Create files with IDs that would sort differently than creation order
 	files := map[string]*MarkdownFile{
@@ -694,7 +658,7 @@ func TestBuildGraph_Performance(t *testing.T) {
 		t.Skip("Skipping performance test in short mode")
 	}
 
-	gb := NewGraphBuilder(nil, GraphBuilderConfig{})
+	gb := NewGraphBuilder(GraphBuilderConfig{})
 
 	// Create a large number of interconnected files
 	fileCount := 1000

@@ -25,8 +25,7 @@ import (
 // Thread Safety: GraphBuilder methods are NOT thread-safe. The builder assumes
 // single-threaded execution. Concurrent access would require external synchronization.
 type GraphBuilder struct {
-	classifier *NodeClassifier
-	config     GraphBuilderConfig
+	config GraphBuilderConfig
 }
 
 // GraphBuilderConfig contains configuration options for graph building.
@@ -122,27 +121,12 @@ type edgeKey struct {
 }
 
 // NewGraphBuilder creates a new graph builder with the given configuration.
-// The classifier is used to categorize nodes based on file properties and frontmatter.
 // If config.DefaultWeight is not specified or is invalid (<= 0), it defaults to 1.0.
-//
-// Example usage:
-//
-//	classifier := NewNodeClassifier(classificationConfig)
-//	builder := NewGraphBuilder(classifier, GraphBuilderConfig{
-//	    DefaultWeight: 1.0,
-//	    SkipOrphans: true,
-//	})
-//	graph, err := builder.BuildGraph(parseResult)
-func NewGraphBuilder(classifier *NodeClassifier, config GraphBuilderConfig) *GraphBuilder {
-	// Set defaults
+func NewGraphBuilder(config GraphBuilderConfig) *GraphBuilder {
 	if config.DefaultWeight <= 0 {
 		config.DefaultWeight = 1.0
 	}
-
-	return &GraphBuilder{
-		classifier: classifier,
-		config:     config,
-	}
+	return &GraphBuilder{config: config}
 }
 
 // BuildGraph transforms a ParseResult into a graph structure using a two-pass algorithm.
@@ -349,11 +333,7 @@ func (gb *GraphBuilder) buildEdges(
 func (gb *GraphBuilder) createNode(file *MarkdownFile, id string) (*models.VaultNode, error) {
 	title := file.Title
 
-	// Determine node type using classifier
 	nodeType := ""
-	if gb.classifier != nil {
-		nodeType = gb.classifier.ClassifyNode(file)
-	}
 
 	// Extract tags
 	tags := file.GetTags()

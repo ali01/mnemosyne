@@ -9,6 +9,7 @@ type Node struct {
 	Content  string                 `json:"content,omitempty"`
 	Position Position               `json:"position"`
 	Level    int                    `json:"level"`
+	Color    string                 `json:"color,omitempty"`
 	Metadata map[string]interface{} `json:"metadata,omitempty"`
 }
 

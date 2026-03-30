@@ -142,13 +142,8 @@
     }, BLUR_DELAY_MS);
   }
 
-  function getTypeColor(type?: string): string {
-    switch (type) {
-      case 'core': return 'var(--color-node-core)';
-      case 'sub': return 'var(--color-node-sub)';
-      case 'detail': return 'var(--color-node-detail)';
-      default: return 'var(--color-node-default)';
-    }
+  function getTypeColor(_type?: string): string {
+    return 'var(--color-node-default)';
   }
 
   onDestroy(() => {

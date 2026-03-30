@@ -125,15 +125,6 @@ func (m *MarkdownFile) GetTags() []string {
 	return []string{}
 }
 
-// GetNodeType determines the node type using the provided NodeClassifier
-// If classifier is nil, returns "note" as the default type
-func (m *MarkdownFile) GetNodeType(classifier *NodeClassifier) string {
-	if classifier == nil {
-		return "note"
-	}
-	return classifier.ClassifyNode(m)
-}
-
 // GetCreatedAt returns the file creation time
 func (m *MarkdownFile) GetCreatedAt() time.Time {
 	if m.FileInfo != nil {

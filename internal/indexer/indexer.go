@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/ali01/mnemosyne/internal/config"
 	"github.com/ali01/mnemosyne/internal/discovery"
 	"github.com/ali01/mnemosyne/internal/models"
 	"github.com/ali01/mnemosyne/internal/store"
@@ -21,10 +20,9 @@ type IndexManager struct {
 }
 
 type vaultState struct {
-	id         int
-	path       string
-	graphs     []registeredGraph
-	classifier *vault.NodeClassifier
+	id     int
+	path   string
+	graphs []registeredGraph
 }
 
 type registeredGraph struct {
@@ -54,25 +52,6 @@ func (m *IndexManager) RegisterVault(vaultPath string) (int, []int, error) {
 		return 0, nil, fmt.Errorf("discover graphs in %s: %w", vaultPath, err)
 	}
 
-	// Build classifier from the first graph that has node_classification
-	var classConfig *config.NodeClassificationConfig
-	for _, d := range defs {
-		if d.NodeClassification != nil {
-			classConfig = d.NodeClassification
-			break
-		}
-	}
-
-	var classifier *vault.NodeClassifier
-	if classConfig != nil {
-		classifier, err = vault.NewNodeClassifierFromConfig(classConfig)
-		if err != nil {
-			return 0, nil, fmt.Errorf("create classifier: %w", err)
-		}
-	} else {
-		classifier = vault.NewNodeClassifier()
-	}
-
 	// Upsert each graph, collect IDs
 	var graphs []registeredGraph
 	var graphIDs []int
@@ -91,10 +70,9 @@ func (m *IndexManager) RegisterVault(vaultPath string) (int, []int, error) {
 	}
 
 	m.vaults[vaultID] = &vaultState{
-		id:         vaultID,
-		path:       vaultPath,
-		graphs:     graphs,
-		classifier: classifier,
+		id:     vaultID,
+		path:   vaultPath,
+		graphs: graphs,
 	}
 
 	return vaultID, graphIDs, nil
@@ -110,7 +88,7 @@ func (m *IndexManager) FullIndexVault(vaultID int) error {
 	start := time.Now()
 	log.Printf("Starting full index of %s", vs.path)
 
-	graph, err := parseAndBuild(vs.path, vs.classifier)
+	graph, err := parseAndBuild(vs.path)
 	if err != nil {
 		return err
 	}
@@ -155,7 +133,7 @@ func (m *IndexManager) IndexFile(vaultID int, relPath string) ([]int, error) {
 
 	log.Printf("Incremental index: %s (vault %d)", relPath, vaultID)
 
-	graph, err := parseAndBuild(vs.path, vs.classifier)
+	graph, err := parseAndBuild(vs.path)
 	if err != nil {
 		return nil, err
 	}
@@ -325,14 +303,14 @@ func computeMemberships(graphs []registeredGraph, nodes []models.VaultNode) map[
 }
 
 // parseAndBuild runs the vault parser and graph builder.
-func parseAndBuild(vaultPath string, classifier *vault.NodeClassifier) (*vault.Graph, error) {
+func parseAndBuild(vaultPath string) (*vault.Graph, error) {
 	parser := vault.NewParser(vaultPath, 4, 100)
 	parseResult, err := parser.ParseVault()
 	if err != nil {
 		return nil, fmt.Errorf("parse vault: %w", err)
 	}
 
-	builder := vault.NewGraphBuilder(classifier, vault.GraphBuilderConfig{
+	builder := vault.NewGraphBuilder(vault.GraphBuilderConfig{
 		DefaultWeight: 1.0,
 		SkipOrphans:   false,
 	})

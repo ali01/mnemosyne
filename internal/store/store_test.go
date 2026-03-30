@@ -684,6 +684,57 @@ func TestReplaceVaultDataLargeBatch(t *testing.T) {
 	assert.Len(t, graph.Edges, 400)
 }
 
+// --- GetGraphDataRaw ---
+
+func TestGetGraphDataRaw(t *testing.T) {
+	s := newTestStore(t)
+	vid, _ := s.UpsertVault("test", "/test")
+	config := `filter: "path:concepts"
+groups:
+  - query: "tag:#index"
+    color: "#E05555"
+`
+	gid, _ := s.UpsertGraph(vid, "root", "", config)
+
+	require.NoError(t, s.UpsertNode(&models.VaultNode{
+		ID: "a", VaultID: vid, Title: "Concepts Index", FilePath: "concepts/index.md",
+		NodeType: "", Tags: models.StringArray{"index"},
+		Metadata: models.JSONMetadata{"author": "Ali"},
+		CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}))
+	require.NoError(t, s.UpsertNode(&models.VaultNode{
+		ID: "b", VaultID: vid, Title: "Economics", FilePath: "econ.md",
+		CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}))
+	require.NoError(t, s.ReplaceGraphMemberships("a", []int{gid}))
+	require.NoError(t, s.ReplaceGraphMemberships("b", []int{gid}))
+	require.NoError(t, s.UpsertPosition(gid, &models.NodePosition{NodeID: "a", X: 10, Y: 20}))
+
+	raw, err := s.GetGraphDataRaw(gid)
+	require.NoError(t, err)
+
+	assert.Equal(t, config, raw.Config)
+	assert.Len(t, raw.Nodes, 2)
+	assert.Len(t, raw.Positions, 1)
+	assert.InDelta(t, 10, raw.Positions["a"].X, 0.01)
+
+	// Verify VaultNode fields are populated
+	for _, n := range raw.Nodes {
+		if n.ID == "a" {
+			assert.Equal(t, "Concepts Index", n.Title)
+			assert.Equal(t, "concepts/index.md", n.FilePath)
+			assert.Contains(t, []string(n.Tags), "index")
+			assert.Equal(t, "Ali", n.Metadata["author"])
+		}
+	}
+}
+
+func TestGetGraphDataRawNotFound(t *testing.T) {
+	s := newTestStore(t)
+	_, err := s.GetGraphDataRaw(999)
+	assert.Error(t, err)
+}
+
 // --- File-based store ---
 
 func TestNewFileStore(t *testing.T) {

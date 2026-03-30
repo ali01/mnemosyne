@@ -16,32 +16,6 @@ type Config struct {
 	HomeGraph string   `yaml:"home-graph,omitempty"` // e.g. "walros/memex"
 }
 
-// NodeClassificationConfig holds node type and classification rule configuration.
-// Lives in GRAPH.yaml files, not the global config.
-type NodeClassificationConfig struct {
-	NodeTypes           map[string]NodeTypeConfig  `yaml:"node_types"`
-	ClassificationRules []ClassificationRuleConfig `yaml:"classification_rules"`
-	DefaultNodeType     string                     `yaml:"default_node_type,omitempty"`
-}
-
-// NodeTypeConfig defines the display properties for a node type.
-type NodeTypeConfig struct {
-	DisplayName    string  `yaml:"display_name"`
-	Description    string  `yaml:"description"`
-	Color          string  `yaml:"color"`
-	SizeMultiplier float64 `yaml:"size_multiplier"`
-}
-
-// ClassificationRuleConfig defines a classification rule.
-type ClassificationRuleConfig struct {
-	Name        string `yaml:"name"`
-	Priority    int    `yaml:"priority"`
-	Type        string `yaml:"type"` // tag, filename_prefix, filename_suffix, filename_match, path_contains, regex
-	Pattern     string `yaml:"pattern"`
-	NodeType    string `yaml:"node_type"`
-	Description string `yaml:"description,omitempty"`
-}
-
 // DefaultConfigPath returns the default config file location.
 func DefaultConfigPath() string {
 	home, _ := os.UserHomeDir()

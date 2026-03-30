@@ -235,6 +235,146 @@ func TestReindexNoIndexer(t *testing.T) {
 	assert.Equal(t, http.StatusInternalServerError, w.Code)
 }
 
+// --- Filter and Groups ---
+
+// seedGraphWithConfig creates a vault, graph with config, nodes with tags, and edges.
+func seedGraphWithConfig(t *testing.T, s *store.Store, config string) int {
+	t.Helper()
+	vid, err := s.UpsertVault("test", "/test")
+	require.NoError(t, err)
+	gid, err := s.UpsertGraph(vid, "root", "", config)
+	require.NoError(t, err)
+
+	require.NoError(t, s.UpsertNode(&models.VaultNode{
+		ID: "a", VaultID: vid, Title: "Aviation", FilePath: "concepts/aviation.md",
+		Tags: models.StringArray{"index"}, Content: "Aviation note.",
+		CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}))
+	require.NoError(t, s.UpsertNode(&models.VaultNode{
+		ID: "b", VaultID: vid, Title: "Economics", FilePath: "concepts/econ.md",
+		Tags: models.StringArray{"open-question"}, Content: "Econ note.",
+		CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}))
+	require.NoError(t, s.UpsertNode(&models.VaultNode{
+		ID: "c", VaultID: vid, Title: "Projects", FilePath: "projects/proj.md",
+		Content: "Projects note.", CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}))
+	require.NoError(t, s.UpsertEdge(&models.VaultEdge{
+		ID: "e1", SourceID: "a", TargetID: "b", EdgeType: "wikilink", Weight: 1,
+	}))
+	require.NoError(t, s.UpsertEdge(&models.VaultEdge{
+		ID: "e2", SourceID: "a", TargetID: "c", EdgeType: "wikilink", Weight: 1,
+	}))
+	require.NoError(t, s.ReplaceGraphMemberships("a", []int{gid}))
+	require.NoError(t, s.ReplaceGraphMemberships("b", []int{gid}))
+	require.NoError(t, s.ReplaceGraphMemberships("c", []int{gid}))
+
+	return gid
+}
+
+func TestGetGraphDataWithGroups(t *testing.T) {
+	srv, s := newTestServer(t)
+	config := `groups:
+  - query: "tag:#index"
+    color: "#E05555"
+  - query: "tag:#open-question"
+    color: "#E5A84B"
+`
+	gid := seedGraphWithConfig(t, s, config)
+
+	w := doRequest(srv.Handler(), "GET", "/api/v1/graphs/"+strconv.Itoa(gid), nil)
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var graph models.Graph
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &graph))
+	assert.Len(t, graph.Nodes, 3)
+	assert.Len(t, graph.Edges, 2)
+
+	// Check colors assigned by groups
+	colors := map[string]string{}
+	for _, n := range graph.Nodes {
+		colors[n.ID] = n.Color
+	}
+	assert.Equal(t, "#E05555", colors["a"]) // has tag:index
+	assert.Equal(t, "#E5A84B", colors["b"]) // has tag:open-question
+	assert.Equal(t, "", colors["c"])         // no matching group
+}
+
+func TestGetGraphDataWithFilter(t *testing.T) {
+	srv, s := newTestServer(t)
+	config := `filter: "path:concepts"
+`
+	gid := seedGraphWithConfig(t, s, config)
+
+	w := doRequest(srv.Handler(), "GET", "/api/v1/graphs/"+strconv.Itoa(gid), nil)
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var graph models.Graph
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &graph))
+
+	// Only concepts/ nodes should be included (a and b), not projects/ (c)
+	assert.Len(t, graph.Nodes, 2)
+	ids := map[string]bool{}
+	for _, n := range graph.Nodes {
+		ids[n.ID] = true
+	}
+	assert.True(t, ids["a"])
+	assert.True(t, ids["b"])
+	assert.False(t, ids["c"])
+
+	// Edge a→c should be pruned (c filtered out), only a→b remains
+	assert.Len(t, graph.Edges, 1)
+	assert.Equal(t, "a", graph.Edges[0].Source)
+	assert.Equal(t, "b", graph.Edges[0].Target)
+}
+
+func TestGetGraphDataNoConfig(t *testing.T) {
+	srv, s := newTestServer(t)
+	gid := seedGraph(t, s)
+
+	w := doRequest(srv.Handler(), "GET", "/api/v1/graphs/"+strconv.Itoa(gid), nil)
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var graph models.Graph
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &graph))
+
+	// No config = show all, no colors
+	assert.Len(t, graph.Nodes, 2)
+	assert.Len(t, graph.Edges, 1)
+	for _, n := range graph.Nodes {
+		assert.Empty(t, n.Color)
+	}
+}
+
+func TestGetGraphDataFilterAndGroups(t *testing.T) {
+	srv, s := newTestServer(t)
+	config := `filter: "path:concepts"
+groups:
+  - query: "tag:#index"
+    color: "#FF0000"
+`
+	gid := seedGraphWithConfig(t, s, config)
+
+	w := doRequest(srv.Handler(), "GET", "/api/v1/graphs/"+strconv.Itoa(gid), nil)
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var graph models.Graph
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &graph))
+
+	// Filter to concepts/ only
+	assert.Len(t, graph.Nodes, 2)
+
+	// Group color applied
+	for _, n := range graph.Nodes {
+		if n.ID == "a" {
+			assert.Equal(t, "#FF0000", n.Color)
+		}
+		if n.ID == "b" {
+			assert.Empty(t, n.Color)
+		}
+	}
+}
+
 // --- CORS ---
 
 func TestCORSPreflight(t *testing.T) {

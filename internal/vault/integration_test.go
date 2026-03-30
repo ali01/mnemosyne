@@ -4,59 +4,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-// createTestClassifier creates a classifier with rules for integration tests
-func createTestClassifier(t *testing.T) *NodeClassifier {
-	rules := []ClassificationRule{
-		{
-			Name:     "index_tag",
-			Priority: 1,
-			Matcher:  func(f *MarkdownFile) bool { return hasTag(f, "index") },
-			NodeType: "index",
-		},
-		{
-			Name:     "open_question_tag",
-			Priority: 1,
-			Matcher:  func(f *MarkdownFile) bool { return hasTag(f, "open-question") },
-			NodeType: "question",
-		},
-		{
-			Name:     "hub_prefix",
-			Priority: 2,
-			Matcher:  func(f *MarkdownFile) bool { return strings.HasPrefix(filepath.Base(f.Path), "~") },
-			NodeType: "hub",
-		},
-		{
-			Name:     "concepts_dir",
-			Priority: 3,
-			Matcher:  func(f *MarkdownFile) bool { return isInDirectory(f.Path, "concepts") },
-			NodeType: "concept",
-		},
-		{
-			Name:     "projects_dir",
-			Priority: 3,
-			Matcher:  func(f *MarkdownFile) bool { return isInDirectory(f.Path, "projects") },
-			NodeType: "project",
-		},
-		{
-			Name:     "questions_dir",
-			Priority: 3,
-			Matcher:  func(f *MarkdownFile) bool { return isInDirectory(f.Path, "questions") },
-			NodeType: "question",
-		},
-	}
-
-	classifier, err := NewNodeClassifierWithRules(rules, "note")
-	require.NoError(t, err)
-	return classifier
-}
 
 func TestIntegration_CompleteVaultParsing(t *testing.T) {
 	// Create a complete vault structure for end-to-end testing
@@ -204,33 +157,26 @@ Links to explore:
 	// Verify all files were parsed
 	assert.Len(t, result.Files, 8)
 
-	// Create test classifier
-	classifier := createTestClassifier(t)
-
 	// Verify specific file relationships
 	indexFile := result.Files["index"]
 	require.NotNil(t, indexFile)
-	assert.Equal(t, "index", indexFile.GetNodeType(classifier))
 	assert.Len(t, indexFile.Links, 3)
 
 	// Verify hub node
 	graphTheoryFile := result.Files["graph-theory"]
 	require.NotNil(t, graphTheoryFile)
-	assert.Equal(t, "hub", graphTheoryFile.GetNodeType(classifier))
 
 	// Verify project file with aliases
 	mnemosyneFile := result.Files["mnemosyne"]
 	require.NotNil(t, mnemosyneFile)
-	assert.Equal(t, "project", mnemosyneFile.GetNodeType(classifier))
 	aliases, ok := mnemosyneFile.Frontmatter.GetStringSlice("aliases")
 	assert.True(t, ok)
 	assert.Contains(t, aliases, "Memory Palace")
 	assert.Contains(t, aliases, "Graph Visualizer")
 
-	// Verify open question
+	// Verify daily file
 	dailyFile := result.Files["daily-2023-01-01"]
 	require.NotNil(t, dailyFile)
-	assert.Equal(t, "question", dailyFile.GetNodeType(classifier))
 
 	// Test link resolution
 	resolved, unresolved := result.Resolver.ResolveLinks(dailyFile.Links, dailyFile.Path)

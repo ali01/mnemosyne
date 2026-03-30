@@ -6,7 +6,11 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/ali01/mnemosyne/internal/discovery"
 	"github.com/ali01/mnemosyne/internal/models"
+	"github.com/ali01/mnemosyne/internal/search"
+	"github.com/ali01/mnemosyne/internal/store"
+	"gopkg.in/yaml.v3"
 )
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -38,11 +42,13 @@ func (s *Server) handleGetGraphData(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	graph, err := s.store.GetGraphData(graphID)
+	raw, err := s.store.GetGraphDataRaw(graphID)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to fetch graph"})
 		return
 	}
+
+	graph := applyFilterAndGroups(raw)
 	writeJSON(w, http.StatusOK, graph)
 }
 
@@ -182,6 +188,97 @@ func (s *Server) handleReindex(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"message": "Reindex completed"})
+}
+
+// --- Filter and group evaluation ---
+
+// graphConfig is the parsed structure of a GRAPH.yaml file for filter/group evaluation.
+type graphConfig struct {
+	Filter string               `yaml:"filter"`
+	Groups []discovery.GroupDef `yaml:"groups"`
+}
+
+// applyFilterAndGroups evaluates the graph's filter and groups against its nodes,
+// pruning filtered-out nodes and assigning group colors.
+func applyFilterAndGroups(raw *store.GraphDataRaw) *models.Graph {
+	var cfg graphConfig
+	if raw.Config != "" {
+		yaml.Unmarshal([]byte(raw.Config), &cfg)
+	}
+
+	// Parse filter query (default: match all)
+	filterQuery, err := search.Parse(cfg.Filter)
+	if err != nil {
+		log.Printf("Invalid filter query %q: %v (showing all nodes)", cfg.Filter, err)
+		filterQuery, _ = search.Parse("*")
+	}
+
+	// Parse group queries
+	type parsedGroup struct {
+		query search.Query
+		color string
+	}
+	var groups []parsedGroup
+	for _, g := range cfg.Groups {
+		q, err := search.Parse(g.Query)
+		if err != nil {
+			log.Printf("Invalid group query %q: %v (skipping group)", g.Query, err)
+			continue
+		}
+		groups = append(groups, parsedGroup{query: q, color: g.Color})
+	}
+
+	// Evaluate filter and groups for each node
+	nodeSet := make(map[string]bool)
+	apiNodes := make([]models.Node, 0, len(raw.Nodes))
+	for _, n := range raw.Nodes {
+		nd := search.NodeData{
+			FilePath:    n.FilePath,
+			Title:       n.Title,
+			Tags:        []string(n.Tags),
+			Frontmatter: map[string]interface{}(n.Metadata),
+		}
+
+		if !filterQuery.Match(&nd) {
+			continue
+		}
+
+		nodeSet[n.ID] = true
+
+		// First matching group determines color
+		var color string
+		for _, g := range groups {
+			if g.query.Match(&nd) {
+				color = g.color
+				break
+			}
+		}
+
+		pos := raw.Positions[n.ID]
+		apiNodes = append(apiNodes, models.Node{
+			ID:       n.ID,
+			Title:    n.Title,
+			FilePath: n.FilePath,
+			Position: models.Position{X: pos.X, Y: pos.Y, Z: pos.Z},
+			Color:    color,
+		})
+	}
+
+	// Prune edges where either endpoint was filtered out
+	apiEdges := make([]models.Edge, 0, len(raw.Edges))
+	for _, e := range raw.Edges {
+		if nodeSet[e.SourceID] && nodeSet[e.TargetID] {
+			apiEdges = append(apiEdges, models.Edge{
+				ID:     e.ID,
+				Source: e.SourceID,
+				Target: e.TargetID,
+				Weight: e.Weight,
+				Type:   e.EdgeType,
+			})
+		}
+	}
+
+	return &models.Graph{Nodes: apiNodes, Edges: apiEdges}
 }
 
 // --- Helpers ---

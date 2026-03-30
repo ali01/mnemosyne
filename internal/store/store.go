@@ -40,6 +40,9 @@ func New(dbPath string) (*Store, error) {
 		return nil, fmt.Errorf("initialize schema: %w", err)
 	}
 
+	// Migrate: add archived column if missing (for databases created before this feature)
+	db.Exec(`ALTER TABLE graphs ADD COLUMN archived INTEGER NOT NULL DEFAULT 0`)
+
 	return &Store{db: db}, nil
 }
 
@@ -95,42 +98,50 @@ func (s *Store) GetVaults() ([]models.Vault, error) {
 // --- Graph operations ---
 
 // UpsertGraph inserts or updates a graph definition, returning its ID.
+// If the graph was previously archived, this unarchives it.
 func (s *Store) UpsertGraph(vaultID int, name, rootPath, config string) (int, error) {
 	var id int
 	err := s.db.QueryRow(`
-		INSERT INTO graphs (vault_id, name, root_path, config, updated_at)
-		VALUES (?, ?, ?, ?, datetime('now'))
+		INSERT INTO graphs (vault_id, name, root_path, config, archived, updated_at)
+		VALUES (?, ?, ?, ?, 0, datetime('now'))
 		ON CONFLICT(vault_id, root_path) DO UPDATE SET
-			name=excluded.name, config=excluded.config, updated_at=datetime('now')
+			name=excluded.name, config=excluded.config, archived=0, updated_at=datetime('now')
 		RETURNING id
 	`, vaultID, name, rootPath, config).Scan(&id)
 	return id, err
 }
 
-// DeleteGraph removes a graph and cascades to graph_nodes and node_positions.
-func (s *Store) DeleteGraph(graphID int) error {
-	_, err := s.db.Exec(`DELETE FROM graphs WHERE id = ?`, graphID)
+// ArchiveGraph soft-deletes a graph by setting archived=1.
+// The graph remains in the DB and the indexer continues maintaining it.
+func (s *Store) ArchiveGraph(graphID int) error {
+	_, err := s.db.Exec(`UPDATE graphs SET archived = 1, updated_at = datetime('now') WHERE id = ?`, graphID)
 	return err
 }
 
-// DeleteStaleGraphs removes graphs for a vault that are not in the keep list.
-func (s *Store) DeleteStaleGraphs(vaultID int, keepGraphIDs []int) error {
-	if len(keepGraphIDs) == 0 {
-		_, err := s.db.Exec(`DELETE FROM graphs WHERE vault_id = ?`, vaultID)
+// ArchiveStaleGraphs archives graphs for a vault that are not in the active list.
+func (s *Store) ArchiveStaleGraphs(vaultID int, activeGraphIDs []int) error {
+	if len(activeGraphIDs) == 0 {
+		_, err := s.db.Exec(`UPDATE graphs SET archived = 1, updated_at = datetime('now') WHERE vault_id = ?`, vaultID)
 		return err
 	}
-	placeholders := make([]string, len(keepGraphIDs))
-	args := make([]interface{}, 0, len(keepGraphIDs)+1)
+	placeholders := make([]string, len(activeGraphIDs))
+	args := make([]interface{}, 0, len(activeGraphIDs)+1)
 	args = append(args, vaultID)
-	for i, id := range keepGraphIDs {
+	for i, id := range activeGraphIDs {
 		placeholders[i] = "?"
 		args = append(args, id)
 	}
 	query := fmt.Sprintf(
-		`DELETE FROM graphs WHERE vault_id = ? AND id NOT IN (%s)`,
+		`UPDATE graphs SET archived = 1, updated_at = datetime('now') WHERE vault_id = ? AND id NOT IN (%s)`,
 		strings.Join(placeholders, ","),
 	)
 	_, err := s.db.Exec(query, args...)
+	return err
+}
+
+// PermanentlyDeleteGraph hard-deletes a graph and cascades to graph_nodes and node_positions.
+func (s *Store) PermanentlyDeleteGraph(graphID int) error {
+	_, err := s.db.Exec(`DELETE FROM graphs WHERE id = ?`, graphID)
 	return err
 }
 
@@ -139,10 +150,10 @@ func (s *Store) GetGraphInfo(graphID int) (*models.GraphInfo, error) {
 	var g models.GraphInfo
 	var config sql.NullString
 	err := s.db.QueryRow(`
-		SELECT g.id, g.vault_id, v.name, g.name, g.root_path, g.config
+		SELECT g.id, g.vault_id, v.name, g.name, g.root_path, g.config, g.archived
 		FROM graphs g JOIN vaults v ON v.id = g.vault_id
 		WHERE g.id = ?
-	`, graphID).Scan(&g.ID, &g.VaultID, &g.VaultName, &g.Name, &g.RootPath, &config)
+	`, graphID).Scan(&g.ID, &g.VaultID, &g.VaultName, &g.Name, &g.RootPath, &config, &g.Archived)
 	if err != nil {
 		return nil, err
 	}
@@ -150,10 +161,57 @@ func (s *Store) GetGraphInfo(graphID int) (*models.GraphInfo, error) {
 	return &g, nil
 }
 
-// GetGraphsByVault returns all graphs for a vault.
+// GetGraphsByVault returns active (non-archived) graphs for a vault.
 func (s *Store) GetGraphsByVault(vaultID int) ([]models.GraphInfo, error) {
 	rows, err := s.db.Query(`
-		SELECT g.id, g.vault_id, v.name, g.name, g.root_path, g.config,
+		SELECT g.id, g.vault_id, v.name, g.name, g.root_path, g.config, g.archived,
+			(SELECT COUNT(*) FROM graph_nodes gn WHERE gn.graph_id = g.id)
+		FROM graphs g JOIN vaults v ON v.id = g.vault_id
+		WHERE g.vault_id = ? AND g.archived = 0
+		ORDER BY g.root_path
+	`, vaultID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanGraphInfos(rows)
+}
+
+// GetAllGraphs returns all active (non-archived) graphs across all vaults.
+func (s *Store) GetAllGraphs() ([]models.GraphInfo, error) {
+	rows, err := s.db.Query(`
+		SELECT g.id, g.vault_id, v.name, g.name, g.root_path, g.config, g.archived,
+			(SELECT COUNT(*) FROM graph_nodes gn WHERE gn.graph_id = g.id)
+		FROM graphs g JOIN vaults v ON v.id = g.vault_id
+		WHERE g.archived = 0
+		ORDER BY v.name, g.root_path
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanGraphInfos(rows)
+}
+
+// GetAllGraphsIncludeArchived returns all graphs (active + archived) for CLI listing.
+func (s *Store) GetAllGraphsIncludeArchived() ([]models.GraphInfo, error) {
+	rows, err := s.db.Query(`
+		SELECT g.id, g.vault_id, v.name, g.name, g.root_path, g.config, g.archived,
+			(SELECT COUNT(*) FROM graph_nodes gn WHERE gn.graph_id = g.id)
+		FROM graphs g JOIN vaults v ON v.id = g.vault_id
+		ORDER BY v.name, g.root_path
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanGraphInfos(rows)
+}
+
+// GetGraphsByVaultIncludeArchived returns all graphs (active + archived) for a vault.
+func (s *Store) GetGraphsByVaultIncludeArchived(vaultID int) ([]models.GraphInfo, error) {
+	rows, err := s.db.Query(`
+		SELECT g.id, g.vault_id, v.name, g.name, g.root_path, g.config, g.archived,
 			(SELECT COUNT(*) FROM graph_nodes gn WHERE gn.graph_id = g.id)
 		FROM graphs g JOIN vaults v ON v.id = g.vault_id
 		WHERE g.vault_id = ?
@@ -166,27 +224,12 @@ func (s *Store) GetGraphsByVault(vaultID int) ([]models.GraphInfo, error) {
 	return scanGraphInfos(rows)
 }
 
-// GetAllGraphs returns all graphs across all vaults with node counts.
-func (s *Store) GetAllGraphs() ([]models.GraphInfo, error) {
-	rows, err := s.db.Query(`
-		SELECT g.id, g.vault_id, v.name, g.name, g.root_path, g.config,
-			(SELECT COUNT(*) FROM graph_nodes gn WHERE gn.graph_id = g.id)
-		FROM graphs g JOIN vaults v ON v.id = g.vault_id
-		ORDER BY v.name, g.root_path
-	`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	return scanGraphInfos(rows)
-}
-
 func scanGraphInfos(rows *sql.Rows) ([]models.GraphInfo, error) {
 	var graphs []models.GraphInfo
 	for rows.Next() {
 		var g models.GraphInfo
 		var config sql.NullString
-		if err := rows.Scan(&g.ID, &g.VaultID, &g.VaultName, &g.Name, &g.RootPath, &config, &g.NodeCount); err != nil {
+		if err := rows.Scan(&g.ID, &g.VaultID, &g.VaultName, &g.Name, &g.RootPath, &config, &g.Archived, &g.NodeCount); err != nil {
 			return nil, err
 		}
 		g.Config = config.String

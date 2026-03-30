@@ -47,6 +47,7 @@ CRITICAL: When you encounter a file reference (e.g., ROADMAP.md), use your Read 
 - Each node belongs to at most one graph
 - Positions are per-graph (independent layouts)
 - `GRAPH.yaml` can optionally contain `filter` and `groups` for Obsidian-style filtering and coloring
+- **Graph archiving**: Deleting a GRAPH.yaml archives the graph (soft delete) instead of hard-deleting. The indexer continues maintaining archived graphs (memberships, positions). Re-adding the GRAPH.yaml unarchives it with all positions preserved.
 
 ### Filter & Groups Pipeline
 - `GRAPH.yaml` defines `filter` (Obsidian search query) and `groups` (query + hex color pairs)
@@ -84,6 +85,8 @@ make run                # Build and run the binary
 ./mnemosyne             # Run (reads ~/.config/mnemosyne/config.yaml)
 ./mnemosyne config.yaml # Run with custom config path
 ./mnemosyne -p 8080     # Override port via CLI flag
+./mnemosyne graphs      # List all graphs (active + archived)
+./mnemosyne graphs delete <id>  # Permanently delete a graph
 ```
 
 ### Development
@@ -142,7 +145,7 @@ SQLite with 7 tables:
 
 ```sql
 vaults (id, name, path, created_at)
-graphs (id, vault_id, name, root_path, config, created_at, updated_at)
+graphs (id, vault_id, name, root_path, config, archived, created_at, updated_at)
 nodes (id, vault_id, file_path, title, content, frontmatter, node_type, tags, in_degree, out_degree, created_at, updated_at, parsed_at)
 edges (id, source_id, target_id, edge_type, display_text, weight, created_at)
 graph_nodes (graph_id, node_id)  -- junction table
@@ -173,7 +176,7 @@ All Go tests run against in-memory SQLite -- no external services needed.
 Frontend tests use vitest with jsdom environment.
 
 ### Test Coverage
-- **Store**: 40 tests - Vault/graph CRUD, graph-scoped queries, GetGraphDataRaw, vault-scoped replace, position independence
+- **Store**: 43 tests - Vault/graph CRUD, archive/unarchive, graph-scoped queries, GetGraphDataRaw, vault-scoped replace, position independence
 - **Discovery**: 12 tests - GRAPH.yaml scanning, filter/groups parsing, nesting validation, IsUnderPath
 - **Search**: 52 tests - Query parsing, all operator types, boolean logic, edge cases, matching
 - **Indexer**: 10 tests - Multi-vault indexing, sibling graphs, GRAPH.yaml lifecycle
@@ -182,7 +185,7 @@ Frontend tests use vitest with jsdom environment.
 - **Config**: 7 tests - Multi-vault format, defaults, validation
 - **Vault Parser**: Existing tests with 94% coverage
 - **Models**: Validation and serialization tests
-- **Frontend**: 136 tests - Component rendering, store behavior, accessibility, search, toast
+- **Frontend**: 135 tests - Component rendering, store behavior, accessibility, search, toast
 
 ### Running Tests
 ```bash
@@ -204,3 +207,5 @@ cd frontend && npx vitest run                    # All frontend tests
 10. **Frontmatter IDs**: Every markdown file needs a unique `id` field in frontmatter to be indexed. IDs must be globally unique across all vaults.
 11. **Filter/groups at serving time**: Evaluated in the API handler, not during indexing. Graph membership stays unchanged, positions survive filter changes.
 12. **Louvain for layout only**: Community detection drives spatial grouping in the two-level layout algorithm. Node colors come from GRAPH.yaml groups, not communities.
+13. **Graph archiving**: Deleting GRAPH.yaml soft-deletes (archives) the graph. The indexer continues maintaining archived graphs, so all data stays current. Unarchiving is a flag flip — positions and memberships are already up to date.
+14. **DB migration**: `ALTER TABLE` runs on startup to add new columns to existing databases. Errors are ignored (column already exists).

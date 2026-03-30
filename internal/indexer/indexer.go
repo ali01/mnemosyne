@@ -52,21 +52,29 @@ func (m *IndexManager) RegisterVault(vaultPath string) (int, []int, error) {
 		return 0, nil, fmt.Errorf("discover graphs in %s: %w", vaultPath, err)
 	}
 
-	// Upsert each graph, collect IDs
-	var graphs []registeredGraph
-	var graphIDs []int
+	// Upsert discovered graphs (sets archived=0 for any previously archived)
+	var activeGraphIDs []int
 	for _, d := range defs {
 		gid, err := m.store.UpsertGraph(vaultID, d.Name, d.RootPath, d.RawConfig)
 		if err != nil {
 			return 0, nil, fmt.Errorf("upsert graph %q: %w", d.RootPath, err)
 		}
-		graphs = append(graphs, registeredGraph{id: gid, rootPath: d.RootPath})
-		graphIDs = append(graphIDs, gid)
+		activeGraphIDs = append(activeGraphIDs, gid)
 	}
 
-	// Delete graphs that no longer have a GRAPH.yaml
-	if err := m.store.DeleteStaleGraphs(vaultID, graphIDs); err != nil {
-		return 0, nil, fmt.Errorf("delete stale graphs: %w", err)
+	// Archive graphs whose GRAPH.yaml is gone (instead of deleting)
+	if err := m.store.ArchiveStaleGraphs(vaultID, activeGraphIDs); err != nil {
+		return 0, nil, fmt.Errorf("archive stale graphs: %w", err)
+	}
+
+	// Load ALL graphs (active + archived) so the indexer maintains all of them
+	allGraphs, err := m.store.GetGraphsByVaultIncludeArchived(vaultID)
+	if err != nil {
+		return 0, nil, fmt.Errorf("load graphs: %w", err)
+	}
+	var graphs []registeredGraph
+	for _, g := range allGraphs {
+		graphs = append(graphs, registeredGraph{id: g.ID, rootPath: g.RootPath})
 	}
 
 	m.vaults[vaultID] = &vaultState{
@@ -75,7 +83,7 @@ func (m *IndexManager) RegisterVault(vaultPath string) (int, []int, error) {
 		graphs: graphs,
 	}
 
-	return vaultID, graphIDs, nil
+	return vaultID, activeGraphIDs, nil
 }
 
 // FullIndexVault parses an entire vault and replaces its data in the database.
@@ -243,35 +251,42 @@ func (m *IndexManager) HandleGraphYAML(vaultID int, relDir string, created bool)
 			return nil, fmt.Errorf("upsert graph: %w", err)
 		}
 
-		vs.graphs = append(vs.graphs, registeredGraph{id: gid, rootPath: newDef.RootPath})
-
-		// Populate memberships from existing nodes
-		nodes, err := m.store.GetAllNodes()
-		if err != nil {
-			return nil, err
-		}
-		var nodeIDs []string
-		for _, n := range nodes {
-			if n.VaultID == vaultID && discovery.IsUnderPath(n.FilePath, newDef.RootPath) {
-				nodeIDs = append(nodeIDs, n.ID)
+		// Add to runtime state if not already present (new graph).
+		// If unarchiving, the graph is already in vs.graphs.
+		alreadyRegistered := false
+		for _, g := range vs.graphs {
+			if g.id == gid {
+				alreadyRegistered = true
+				break
 			}
 		}
-		for _, nid := range nodeIDs {
-			if err := m.store.ReplaceGraphMemberships(nid, []int{gid}); err != nil {
+		if !alreadyRegistered {
+			vs.graphs = append(vs.graphs, registeredGraph{id: gid, rootPath: newDef.RootPath})
+
+			// Populate memberships from existing nodes (new graph only)
+			nodes, err := m.store.GetAllNodes()
+			if err != nil {
 				return nil, err
+			}
+			for _, n := range nodes {
+				if n.VaultID == vaultID && discovery.IsUnderPath(n.FilePath, newDef.RootPath) {
+					if err := m.store.ReplaceGraphMemberships(n.ID, []int{gid}); err != nil {
+						return nil, err
+					}
+				}
 			}
 		}
 
 		return []int{gid}, nil
 	}
 
-	// Deleted: find and remove the graph
-	for i, g := range vs.graphs {
+	// Deleted: archive the graph but keep it in runtime state for continued indexing
+	for _, g := range vs.graphs {
 		if g.rootPath == relDir {
-			if err := m.store.DeleteGraph(g.id); err != nil {
-				return nil, fmt.Errorf("delete graph: %w", err)
+			if err := m.store.ArchiveGraph(g.id); err != nil {
+				return nil, fmt.Errorf("archive graph: %w", err)
 			}
-			vs.graphs = append(vs.graphs[:i], vs.graphs[i+1:]...)
+			// Don't remove from vs.graphs — indexer keeps maintaining it
 			return []int{g.id}, nil
 		}
 	}

@@ -8,6 +8,8 @@
 - ✅ Graph construction with community-based spatial layout
 - ✅ Live updates via fsnotify + SSE
 - ✅ Interactive visualization with Sigma.js
+- ✅ Graph archiving with position preservation
+- ✅ CLI graph management (`mnemosyne graphs`)
 - ✅ Full test suite (Go + frontend)
 
 ## Architecture
@@ -48,6 +50,8 @@ Vault Directory → fsnotify → Indexer → SQLite → net/http API → Embedde
 - Atomic bulk replace for full re-indexing
 - Position persistence across re-indexes
 - Graph-scoped data retrieval with filter/group evaluation
+- Graph archiving (soft delete) — positions and memberships preserved when GRAPH.yaml removed
+- Auto-migration for existing databases (ALTER TABLE on startup)
 
 ### API ✅
 - net/http handlers (Go 1.22+ ServeMux)
@@ -56,6 +60,8 @@ Vault Directory → fsnotify → Indexer → SQLite → net/http API → Embedde
 - CORS middleware
 - Embedded static file serving with SPA fallback
 - `--port` / `-p` CLI flag to override config port
+- `mnemosyne graphs` CLI to list active/archived graphs
+- `mnemosyne graphs delete <id>` CLI to permanently delete a graph
 
 ### Frontend ✅
 - Svelte + Vite (no SvelteKit)
@@ -68,7 +74,7 @@ Vault Directory → fsnotify → Indexer → SQLite → net/http API → Embedde
 - Dark theme UI with search, zoom controls
 - Path-based router with graph selector dropdown
 - SSE listener for live graph reload
-- Vitest test suite with 136 tests
+- Vitest test suite with 135 tests
 
 ### File Watching ✅
 - Per-vault fsnotify recursive directory watching

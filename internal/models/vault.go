@@ -133,6 +133,7 @@ type GraphInfo struct {
 	Name      string `json:"name"`
 	RootPath  string `json:"root_path"`
 	Config    string `json:"config,omitempty"`
+	Archived  bool   `json:"archived,omitempty"`
 	NodeCount int    `json:"node_count,omitempty"`
 	EdgeCount int    `json:"edge_count,omitempty"`
 }

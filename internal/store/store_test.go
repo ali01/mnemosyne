@@ -144,7 +144,7 @@ func TestGetAllGraphs(t *testing.T) {
 	assert.Len(t, graphs, 2)
 }
 
-func TestDeleteStaleGraphs(t *testing.T) {
+func TestArchiveStaleGraphs(t *testing.T) {
 	s := newTestStore(t)
 	vid := createTestVault(t, s, "v", "/v")
 
@@ -152,13 +152,64 @@ func TestDeleteStaleGraphs(t *testing.T) {
 	g2 := createTestGraph(t, s, vid, "concepts", "concepts")
 	createTestGraph(t, s, vid, "stale", "stale")
 
-	require.NoError(t, s.DeleteStaleGraphs(vid, []int{g1, g2}))
+	require.NoError(t, s.ArchiveStaleGraphs(vid, []int{g1, g2}))
 
+	// Active graphs exclude archived
 	graphs, _ := s.GetGraphsByVault(vid)
 	assert.Len(t, graphs, 2)
+
+	// All graphs include archived
+	all, _ := s.GetGraphsByVaultIncludeArchived(vid)
+	assert.Len(t, all, 3)
 }
 
-func TestDeleteGraphCascadesPositions(t *testing.T) {
+func TestArchiveGraphPreservesPositions(t *testing.T) {
+	s := newTestStore(t)
+	vid := createTestVault(t, s, "v", "/v")
+	gid := createTestGraph(t, s, vid, "root", "")
+	n := testNode(vid, "n1", "N", "n.md")
+	require.NoError(t, s.UpsertNode(&n))
+	require.NoError(t, s.ReplaceGraphMemberships("n1", []int{gid}))
+	require.NoError(t, s.UpsertPosition(gid, &models.NodePosition{NodeID: "n1", X: 10, Y: 20}))
+
+	// Archive — positions and memberships should survive
+	require.NoError(t, s.ArchiveGraph(gid))
+
+	graph, err := s.GetGraphData(gid)
+	require.NoError(t, err)
+	assert.Len(t, graph.Nodes, 1)
+	assert.InDelta(t, 10, graph.Nodes[0].Position.X, 0.01)
+
+	// Archived graph excluded from active list
+	active, _ := s.GetAllGraphs()
+	for _, g := range active {
+		assert.NotEqual(t, gid, g.ID)
+	}
+}
+
+func TestUpsertGraphUnarchives(t *testing.T) {
+	s := newTestStore(t)
+	vid := createTestVault(t, s, "v", "/v")
+	gid := createTestGraph(t, s, vid, "root", "")
+
+	require.NoError(t, s.ArchiveGraph(gid))
+
+	// Re-upsert should unarchive with same ID
+	gid2, err := s.UpsertGraph(vid, "root", "", "")
+	require.NoError(t, err)
+	assert.Equal(t, gid, gid2)
+
+	active, _ := s.GetAllGraphs()
+	found := false
+	for _, g := range active {
+		if g.ID == gid {
+			found = true
+		}
+	}
+	assert.True(t, found, "unarchived graph should appear in active list")
+}
+
+func TestPermanentlyDeleteGraphCascadesPositions(t *testing.T) {
 	s := newTestStore(t)
 	vid := createTestVault(t, s, "v", "/v")
 	gid := createTestGraph(t, s, vid, "root", "")
@@ -166,9 +217,8 @@ func TestDeleteGraphCascadesPositions(t *testing.T) {
 	require.NoError(t, s.UpsertNode(&n))
 	require.NoError(t, s.UpsertPosition(gid, &models.NodePosition{NodeID: "n1", X: 10, Y: 20}))
 
-	require.NoError(t, s.DeleteGraph(gid))
+	require.NoError(t, s.PermanentlyDeleteGraph(gid))
 
-	// Position should be gone
 	graph, err := s.GetGraphData(gid)
 	require.NoError(t, err)
 	assert.Len(t, graph.Nodes, 0)

@@ -10,8 +10,10 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
+	"text/tabwriter"
 	"time"
 
 	"github.com/ali01/mnemosyne/internal/api"
@@ -25,6 +27,12 @@ func main() {
 	portFlag := flag.Int("port", 0, "HTTP port to listen on (overrides config file)")
 	flag.IntVar(portFlag, "p", 0, "HTTP port to listen on (shorthand)")
 	flag.Parse()
+
+	// Subcommand dispatch
+	if flag.NArg() > 0 && flag.Arg(0) == "graphs" {
+		cmdGraphs(flag.Args()[1:])
+		return
+	}
 
 	cfgPath := config.DefaultConfigPath()
 	if flag.NArg() > 0 {
@@ -151,4 +159,72 @@ func bootstrapConfig(cfgPath string) error {
 
 	fmt.Printf("Config created at %s\n\n", cfgPath)
 	return nil
+}
+
+func cmdGraphs(args []string) {
+	if len(args) > 0 && args[0] == "delete" {
+		cmdGraphsDelete(args[1:])
+		return
+	}
+
+	dbPath := config.DBPath()
+	s, err := store.New(dbPath)
+	if err != nil {
+		log.Fatalf("Failed to open database: %v", err)
+	}
+	defer s.Close()
+
+	graphs, err := s.GetAllGraphsIncludeArchived()
+	if err != nil {
+		log.Fatalf("Failed to list graphs: %v", err)
+	}
+
+	if len(graphs) == 0 {
+		fmt.Println("No graphs found.")
+		return
+	}
+
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(w, "ID\tVault\tName\tRoot Path\tNodes\tStatus")
+	fmt.Fprintln(w, "--\t-----\t----\t---------\t-----\t------")
+	for _, g := range graphs {
+		status := "active"
+		if g.Archived {
+			status = "archived"
+		}
+		fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%d\t%s\n", g.ID, g.VaultName, g.Name, g.RootPath, g.NodeCount, status)
+	}
+	w.Flush()
+}
+
+func cmdGraphsDelete(args []string) {
+	if len(args) == 0 {
+		fmt.Fprintln(os.Stderr, "Usage: mnemosyne graphs delete <graph-id>")
+		os.Exit(1)
+	}
+
+	graphID, err := strconv.Atoi(args[0])
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Invalid graph ID: %s\n", args[0])
+		os.Exit(1)
+	}
+
+	dbPath := config.DBPath()
+	s, err := store.New(dbPath)
+	if err != nil {
+		log.Fatalf("Failed to open database: %v", err)
+	}
+	defer s.Close()
+
+	info, err := s.GetGraphInfo(graphID)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Graph %d not found.\n", graphID)
+		os.Exit(1)
+	}
+
+	if err := s.PermanentlyDeleteGraph(graphID); err != nil {
+		log.Fatalf("Failed to delete graph: %v", err)
+	}
+
+	fmt.Printf("Permanently deleted graph %d (%s/%s).\n", info.ID, info.VaultName, info.Name)
 }

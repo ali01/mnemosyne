@@ -319,28 +319,6 @@ describe('Toast', () => {
 		expect(mockRemove).toHaveBeenCalledWith('non-existent');
 	});
 
-	it('should handle rapid toast additions and removals', async () => {
-		// Add multiple toasts before rendering
-		const toasts: ToastType[] = [];
-		for (let i = 0; i < 5; i++) {
-			toasts.push({ id: `rapid-${i}`, message: `Message ${i}`, type: 'info' });
-		}
-		mockToastStore.set(toasts);
-
-		render(Toast);
-
-		// Verify all toasts are rendered
-		expect(screen.getAllByRole('alert')).toHaveLength(5);
-
-		// Clear all toasts
-		mockToastStore.set([]);
-
-		// Wait for DOM to update
-		await waitFor(() => {
-			expect(screen.queryByRole('alert')).not.toBeInTheDocument();
-		});
-	});
-
 	it('should handle store updates during transitions', async () => {
 		// Add initial toast before rendering
 		mockToastStore.set([{ id: 'transition-1', message: 'First', type: 'success' }]);

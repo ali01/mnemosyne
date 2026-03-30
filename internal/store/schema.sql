@@ -41,6 +41,7 @@ CREATE TABLE IF NOT EXISTS graphs (
     name TEXT NOT NULL,
     root_path TEXT NOT NULL DEFAULT '',  -- relative to vault, '' for vault root
     config TEXT,                          -- GRAPH.yaml contents as JSON
+    archived INTEGER NOT NULL DEFAULT 0, -- 1 = GRAPH.yaml deleted, graph hidden but maintained
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now')),
     UNIQUE(vault_id, root_path)

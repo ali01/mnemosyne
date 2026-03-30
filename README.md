@@ -21,6 +21,8 @@ On first run with no config, Mnemosyne prompts for your vault path and creates `
 ./mnemosyne                 # Uses default config
 ./mnemosyne config.yaml     # Custom config path
 ./mnemosyne -p 8080         # Override port
+./mnemosyne graphs          # List all graphs (active + archived)
+./mnemosyne graphs delete 5 # Permanently delete a graph
 ```
 
 Open http://localhost:5555 in your browser.
@@ -43,8 +45,10 @@ Frontend at http://localhost:5173, API at http://localhost:5555.
 - **Live updates**: File changes detected via fsnotify, graph updates via SSE
 - **Interactive graph**: Sigma.js with WebGL rendering, force-directed layout with community-based spatial grouping
 - **Persistent layout**: Node positions saved per-graph to SQLite, persist across sessions
+- **Graph archiving**: Deleting a GRAPH.yaml preserves positions in the database; re-adding it restores the graph with its saved layout
 - **Search**: Full-text search via SQLite FTS5
 - **Single binary**: Frontend embedded in the Go binary, no separate web server needed
+- **CLI management**: List and permanently delete graphs via `mnemosyne graphs`
 
 ## Configuration
 

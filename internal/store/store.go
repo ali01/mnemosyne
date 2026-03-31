@@ -52,6 +52,9 @@ func NewMemory() (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
+	// With :memory:, each connection gets its own database. Limit to one
+	// connection so all queries share the same schema and data.
+	db.SetMaxOpenConns(1)
 	if _, err := db.Exec(schemaSQL); err != nil {
 		db.Close()
 		return nil, err

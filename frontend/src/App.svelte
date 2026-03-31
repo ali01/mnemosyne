@@ -3,6 +3,7 @@
   import type { Route } from '$lib/router';
   import Toast from '$lib/components/Toast.svelte';
   import ErrorBoundary from '$lib/components/ErrorBoundary.svelte';
+  import { toast } from '$lib/stores/toast';
   import GraphPage from '$lib/pages/GraphPage.svelte';
   import NotePage from '$lib/pages/NotePage.svelte';
   import GraphListPage from '$lib/pages/GraphListPage.svelte';
@@ -33,11 +34,13 @@
   async function fetchGraphs() {
     try {
       const res = await fetch('/api/v1/graphs');
+      if (!res.ok) throw new Error(`Server error: ${res.status}`);
       const data = await res.json();
       graphs = data.graphs || [];
       if (data.home_graph) homeGraph = data.home_graph;
     } catch (e) {
       console.error('Failed to fetch graphs:', e);
+      toast.error('Unable to reach the server. Please check that the backend is running.');
     }
   }
 
@@ -55,6 +58,11 @@
 
     // Listen for graph list changes (GRAPH.yaml added/removed)
     eventSource = new EventSource('/api/v1/events');
+    eventSource.onerror = () => {
+      if (eventSource?.readyState === EventSource.CLOSED) {
+        toast.error('Lost connection to the server. Real-time updates are unavailable.');
+      }
+    };
     eventSource.addEventListener('graphs-changed', async () => {
       const oldGraphId = resolveGraphId($route, graphs);
       await fetchGraphs();

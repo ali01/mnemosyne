@@ -203,7 +203,9 @@ type graphConfig struct {
 func applyFilterAndGroups(raw *store.GraphDataRaw) *models.Graph {
 	var cfg graphConfig
 	if raw.Config != "" {
-		yaml.Unmarshal([]byte(raw.Config), &cfg)
+		if err := yaml.Unmarshal([]byte(raw.Config), &cfg); err != nil {
+			log.Printf("Failed to parse graph config: %v (using defaults)", err)
+		}
 	}
 
 	// Parse filter query (default: match all)

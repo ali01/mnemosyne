@@ -51,8 +51,8 @@ id: "b"
 `)
 
 	assert.Eventually(t, func() bool {
-		g, _ := s.GetGraphData(graphIDs[0])
-		return len(g.Nodes) == 2
+		g, err := s.GetGraphData(graphIDs[0])
+		return err == nil && len(g.Nodes) == 2
 	}, 3*time.Second, 100*time.Millisecond, "expected 2 nodes after adding a file")
 }
 
@@ -91,7 +91,8 @@ id: "b"
 `)
 	require.NoError(t, m.FullIndexVault(vaultID))
 
-	g, _ := s.GetGraphData(graphIDs[0])
+	g, err := s.GetGraphData(graphIDs[0])
+	require.NoError(t, err)
 	require.Len(t, g.Nodes, 2)
 
 	w, err := New(m, vaultID, dir)
@@ -102,8 +103,8 @@ id: "b"
 	require.NoError(t, os.Remove(filepath.Join(dir, "note-b.md")))
 
 	assert.Eventually(t, func() bool {
-		g, _ := s.GetGraphData(graphIDs[0])
-		return len(g.Nodes) == 1
+		g, err := s.GetGraphData(graphIDs[0])
+		return err == nil && len(g.Nodes) == 1
 	}, 10*time.Second, 200*time.Millisecond, "expected 1 node after deleting a file")
 }
 
@@ -118,7 +119,8 @@ func TestWatcherIgnoresNonMarkdown(t *testing.T) {
 	writeFile(t, filepath.Join(dir, "image.png"), "not markdown")
 
 	time.Sleep(1 * time.Second)
-	g, _ := s.GetGraphData(graphIDs[0])
+	g, err := s.GetGraphData(graphIDs[0])
+	require.NoError(t, err)
 	assert.Len(t, g.Nodes, 1, "non-markdown files should not trigger indexing")
 }
 
@@ -139,8 +141,8 @@ id: "r%d"
 	}
 
 	assert.Eventually(t, func() bool {
-		g, _ := s.GetGraphData(graphIDs[0])
-		return len(g.Nodes) == 6
+		g, err := s.GetGraphData(graphIDs[0])
+		return err == nil && len(g.Nodes) == 6
 	}, 5*time.Second, 100*time.Millisecond, "expected 6 nodes after batch creation")
 }
 
@@ -172,8 +174,8 @@ id: "sub"
 `)
 
 	assert.Eventually(t, func() bool {
-		g, _ := s.GetGraphData(graphIDs[0])
-		return len(g.Nodes) == 2
+		g, err := s.GetGraphData(graphIDs[0])
+		return err == nil && len(g.Nodes) == 2
 	}, 3*time.Second, 100*time.Millisecond, "expected 2 nodes after adding file in subdirectory")
 }
 

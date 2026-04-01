@@ -52,6 +52,9 @@ func NewMemory() (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
+	// With :memory:, each connection gets its own database. Limit to one
+	// connection so all queries share the same schema and data.
+	db.SetMaxOpenConns(1)
 	if _, err := db.Exec(schemaSQL); err != nil {
 		db.Close()
 		return nil, err
@@ -242,10 +245,16 @@ func scanGraphInfos(rows *sql.Rows) ([]models.GraphInfo, error) {
 
 // UpsertNode inserts or updates a node. VaultID must be set.
 func (s *Store) UpsertNode(n *models.VaultNode) error {
-	tags, _ := json.Marshal(n.Tags)
-	meta, _ := json.Marshal(n.Metadata)
+	tags, err := json.Marshal(n.Tags)
+	if err != nil {
+		return fmt.Errorf("marshal tags for node %s: %w", n.ID, err)
+	}
+	meta, err := json.Marshal(n.Metadata)
+	if err != nil {
+		return fmt.Errorf("marshal metadata for node %s: %w", n.ID, err)
+	}
 
-	_, err := s.db.Exec(`
+	_, err = s.db.Exec(`
 		INSERT INTO nodes (id, vault_id, file_path, title, content, frontmatter, node_type, tags, in_degree, out_degree, created_at, updated_at, parsed_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
 		ON CONFLICT(id) DO UPDATE SET
@@ -626,8 +635,14 @@ func (s *Store) ReplaceVaultData(vaultID int, nodes []models.VaultNode, edges []
 	defer nodeStmt.Close()
 
 	for _, n := range nodes {
-		tags, _ := json.Marshal(n.Tags)
-		meta, _ := json.Marshal(n.Metadata)
+		tags, err := json.Marshal(n.Tags)
+		if err != nil {
+			return fmt.Errorf("marshal tags for node %s: %w", n.ID, err)
+		}
+		meta, err := json.Marshal(n.Metadata)
+		if err != nil {
+			return fmt.Errorf("marshal metadata for node %s: %w", n.ID, err)
+		}
 		if _, err := nodeStmt.Exec(n.ID, vaultID, n.FilePath, n.Title, n.Content, string(meta), n.NodeType, string(tags),
 			n.InDegree, n.OutDegree,
 			n.CreatedAt.Format(time.RFC3339), n.UpdatedAt.Format(time.RFC3339)); err != nil {
@@ -692,10 +707,14 @@ func scanOneNode(sc nodeScanner) (models.VaultNode, error) {
 	}
 	n.NodeType = nodeType.String
 	if frontmatter.Valid {
-		json.Unmarshal([]byte(frontmatter.String), &n.Metadata)
+		if err := json.Unmarshal([]byte(frontmatter.String), &n.Metadata); err != nil {
+			return n, fmt.Errorf("unmarshal frontmatter for node %s: %w", n.ID, err)
+		}
 	}
 	if tags.Valid {
-		json.Unmarshal([]byte(tags.String), &n.Tags)
+		if err := json.Unmarshal([]byte(tags.String), &n.Tags); err != nil {
+			return n, fmt.Errorf("unmarshal tags for node %s: %w", n.ID, err)
+		}
 	}
 	if createdAt.Valid {
 		n.CreatedAt, _ = time.Parse(time.RFC3339, createdAt.String)

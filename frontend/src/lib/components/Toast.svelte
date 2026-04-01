@@ -52,10 +52,12 @@
 	.toast-container {
 		position: fixed;
 		bottom: 20px;
-		right: 20px;
+		left: 50%;
+		transform: translateX(-50%);
 		z-index: 1000;
 		display: flex;
 		flex-direction: column;
+		align-items: center;
 		gap: 10px;
 		/* Pointer-events strategy: Container has pointer-events: none to allow clicking
 		   through the empty space between toasts, while individual toasts have

@@ -45,7 +45,13 @@
             method: "PUT",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(positions),
-        }).catch((err) => console.error("Failed to save positions:", err));
+        }).then((res) => {
+            if (!res.ok) {
+                toast.error("Failed to save positions. Backend returned an error.");
+            }
+        }).catch(() => {
+            toast.error("Unable to reach the server. Position changes were not saved.");
+        });
     }
 
     onMount(async () => {

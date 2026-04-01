@@ -5,7 +5,6 @@
   import { wikilinkExtension } from '$lib/utils/wikilink-renderer';
   import DOMPurify from 'isomorphic-dompurify';
 
-  export let graphId: number;
   export let graphUrl: string = '/';
   export let id: string;
 

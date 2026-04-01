@@ -89,7 +89,6 @@
   {#if loaded}
     {#if $route.type === 'note' && graphId != null}
       <NotePage
-        graphId={graphId}
         graphUrl={currentGraph ? graphUrl(currentGraph) : '/'}
         id={$route.noteId || ''}
       />

@@ -15,16 +15,16 @@ jobs:
   backend-tests:
     name: Backend Tests
     runs-on: ubuntu-latest
-    
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-    
+
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
         go-version: ${{ env.GO_VERSION }}
-    
+
     - name: Cache Go modules
       uses: actions/cache@v4
       with:
@@ -32,23 +32,19 @@ jobs:
         key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }} # Cache based on go.sum
         restore-keys: |
           ${{ runner.os }}-go-
-    
+
     - name: Install dependencies
-      run: |
-        cd backend
-        go mod download
-    
+      run: go mod download
+
     - name: Run ALL tests (including PostgreSQL integration tests)
       run: |
-        cd backend
         # Run all tests without -short flag to include integration tests
         # Docker is available in GitHub Actions, so testcontainers will work
         go test -v -race -coverprofile=coverage.out ./... | tee test-output.log
-        
+
     - name: Show test summary
       if: always()
       run: |
-        cd backend
         echo "=== Test Summary ==="
         # Pattern explanation:
         # "^=== RUN" - matches test start markers (e.g., "=== RUN TestFoo")
@@ -59,7 +55,7 @@ jobs:
         echo "Failed tests: $(grep -c "^--- FAIL:" test-output.log || echo 0)"
         # "^--- SKIP:" - matches skipped test markers (e.g., "--- SKIP: TestBaz (0.00s)")
         echo "Skipped tests: $(grep -c "^--- SKIP:" test-output.log || echo 0)"
-        
+
         # Show any skipped tests
         # -q flag: quiet mode, just check if pattern exists
         if grep -q "^--- SKIP:" test-output.log; then
@@ -67,7 +63,7 @@ jobs:
           echo "=== Skipped Tests ==="
           grep "^--- SKIP:" test-output.log || true
         fi
-        
+
         # Show any failed tests
         # -q flag: quiet mode, just check if pattern exists
         if grep -q "^--- FAIL:" test-output.log; then
@@ -75,64 +71,63 @@ jobs:
           echo "=== Failed Tests ==="
           grep "^--- FAIL:" test-output.log || true
         fi
-    
+
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v3
       with:
-        file: ./backend/coverage.out
+        file: ./coverage.out
         flags: backend
         name: backend-coverage
-    
+
     - name: Run benchmarks
       run: |
-        cd backend
         # -bench=. runs all benchmarks
         # -benchmem includes memory allocation stats
         # -run=^$ skips normal tests (^$ is regex that matches nothing)
         go test -bench=. -benchmem -run=^$ ./internal/vault/... | tee benchmark.txt
-    
+
     - name: Upload benchmark results
       uses: actions/upload-artifact@v4
       with:
         name: benchmark-results
-        path: backend/benchmark.txt
+        path: benchmark.txt
 
   frontend-tests:
     name: Frontend Tests
     runs-on: ubuntu-latest
-    
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-    
+
     - name: Setup Node.js
       uses: actions/setup-node@v4
       with:
         node-version: ${{ env.NODE_VERSION }}
         cache: 'npm'
         cache-dependency-path: frontend/package-lock.json
-    
+
     - name: Install dependencies
       run: |
         cd frontend
         npm ci
-    
+
     - name: Run type checking
       run: |
         cd frontend
         npm run check
-    
+
     # Frontend tests not implemented yet - skipping for now
     # - name: Run tests
     #   run: |
     #     cd frontend
     #     npm test
-    
+
     - name: Build application
       run: |
         cd frontend
         npm run build
-    
+
     - name: Upload build artifacts
       uses: actions/upload-artifact@v4
       with:
@@ -142,31 +137,30 @@ jobs:
   lint:
     name: Lint Code
     runs-on: ubuntu-latest
-    
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-    
+
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
         go-version: ${{ env.GO_VERSION }}
-    
+
     - name: golangci-lint
       uses: golangci/golangci-lint-action@v6
       with:
         version: latest
-        working-directory: backend
-        args: --timeout=5m --config=.golangci.yml --out-format=colored-line-number
-    
+        args: --timeout=5m --out-format=colored-line-number
+
     - name: Setup Node.js
       uses: actions/setup-node@v4
       with:
         node-version: ${{ env.NODE_VERSION }}
         cache: 'npm'
         cache-dependency-path: frontend/package-lock.json
-    
-    # Frontend linting not configured yet - skipping for now  
+
+    # Frontend linting not configured yet - skipping for now
     # - name: Lint frontend
     #   run: |
     #     cd frontend
@@ -176,17 +170,17 @@ jobs:
   security-scan:
     name: Security Scanning
     runs-on: ubuntu-latest
-    
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-    
+
     - name: Run Gosec Security Scanner
       uses: securego/gosec@master
       with:
-        args: '-no-fail -fmt sarif -out gosec-results.sarif ./backend/...'
+        args: '-no-fail -fmt sarif -out gosec-results.sarif ./...'
       continue-on-error: true
-    
+
     - name: Check if Gosec SARIF file exists
       id: gosec-sarif-check
       run: |
@@ -195,7 +189,7 @@ jobs:
         else
           echo "exists=false" >> $GITHUB_OUTPUT
         fi
-    
+
     - name: Upload Gosec SARIF file
       uses: github/codeql-action/upload-sarif@v3
       if: steps.gosec-sarif-check.outputs.exists == 'true'
@@ -203,7 +197,7 @@ jobs:
         sarif_file: gosec-results.sarif
         category: gosec
       continue-on-error: true
-    
+
     - name: Run Trivy vulnerability scanner
       uses: aquasecurity/trivy-action@master
       with:
@@ -212,7 +206,7 @@ jobs:
         format: 'sarif'
         output: 'trivy-results.sarif'
       continue-on-error: true
-    
+
     - name: Check if Trivy SARIF file exists
       id: trivy-sarif-check
       run: |
@@ -221,7 +215,7 @@ jobs:
         else
           echo "exists=false" >> $GITHUB_OUTPUT
         fi
-    
+
     - name: Upload Trivy SARIF file
       uses: github/codeql-action/upload-sarif@v3
       if: steps.trivy-sarif-check.outputs.exists == 'true'

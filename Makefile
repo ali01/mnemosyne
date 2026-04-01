@@ -14,7 +14,7 @@ help:
 	@echo "  make run          - Build (if needed) and run the binary"
 	@echo "  make build-frontend - Build only the frontend"
 	@echo "  make dev          - Run frontend dev server + Go backend"
-	@echo "  make test         - Run all Go tests"
+	@echo "  make test         - Run all tests (Go + frontend)"
 	@echo "  make clean        - Clean build artifacts"
 
 build-frontend:
@@ -32,6 +32,7 @@ dev-frontend:
 
 test:
 	go test ./internal/... -count=1
+	cd frontend && npx vitest run
 
 clean:
 	rm -rf mnemosyne frontend/dist frontend/node_modules

@@ -87,8 +87,8 @@ func main() {
 		}
 		for _, g := range graphs {
 			ps.Register(g.ID, g.RootPath, vaultPath)
-			if err := ps.ImportIfEmpty(g.ID); err != nil {
-				log.Printf("Warning: failed to import positions for graph %d: %v", g.ID, err)
+			if err := ps.Sync(g.ID); err != nil {
+				log.Printf("Warning: failed to sync positions for graph %d: %v", g.ID, err)
 			}
 		}
 

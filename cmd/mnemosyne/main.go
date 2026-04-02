@@ -19,6 +19,7 @@ import (
 	"github.com/ali01/mnemosyne/internal/api"
 	"github.com/ali01/mnemosyne/internal/config"
 	"github.com/ali01/mnemosyne/internal/indexer"
+	"github.com/ali01/mnemosyne/internal/positionsync"
 	"github.com/ali01/mnemosyne/internal/store"
 	"github.com/ali01/mnemosyne/internal/watcher"
 )
@@ -65,6 +66,7 @@ func main() {
 	log.Printf("Database: %s", dbPath)
 
 	idx := indexer.NewIndexManager(s)
+	ps := positionsync.New(s)
 
 	// Register and index all vaults
 	var watchers []*watcher.Watcher
@@ -78,6 +80,18 @@ func main() {
 			log.Fatalf("Failed to index vault %s: %v", vaultPath, err)
 		}
 
+		// Register all graphs (active + archived) with position syncer and import if needed
+		graphs, err := s.GetGraphsByVaultIncludeArchived(vaultID)
+		if err != nil {
+			log.Fatalf("Failed to list graphs for vault %s: %v", vaultPath, err)
+		}
+		for _, g := range graphs {
+			ps.Register(g.ID, g.RootPath, vaultPath)
+			if err := ps.ImportIfEmpty(g.ID); err != nil {
+				log.Printf("Warning: failed to import positions for graph %d: %v", g.ID, err)
+			}
+		}
+
 		w, err := watcher.New(idx, vaultID, vaultPath)
 		if err != nil {
 			log.Fatalf("Failed to create watcher for %s: %v", vaultPath, err)
@@ -85,7 +99,7 @@ func main() {
 		watchers = append(watchers, w)
 	}
 
-	srv := api.NewServer(s, idx, api.EmbeddedFS(), cfg.Port, cfg.HomeGraph)
+	srv := api.NewServer(s, idx, ps, api.EmbeddedFS(), cfg.Port, cfg.HomeGraph)
 
 	// Start watchers with SSE notification
 	for _, w := range watchers {
@@ -100,6 +114,7 @@ func main() {
 		}
 	}
 	defer func() {
+		ps.Shutdown()
 		for _, w := range watchers {
 			w.Stop()
 		}
@@ -224,6 +239,18 @@ func cmdGraphsDelete(args []string) {
 
 	if err := s.PermanentlyDeleteGraph(graphID); err != nil {
 		log.Fatalf("Failed to delete graph: %v", err)
+	}
+
+	// Remove positions JSON file if vault path is known
+	vaults, _ := s.GetVaults()
+	for _, v := range vaults {
+		if v.ID == info.VaultID {
+			path := positionsync.FilePath(v.Path, info.RootPath)
+			if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+				log.Printf("Warning: failed to remove positions file %s: %v", path, err)
+			}
+			break
+		}
 	}
 
 	fmt.Printf("Permanently deleted graph %d (%s/%s).\n", info.ID, info.VaultName, info.Name)

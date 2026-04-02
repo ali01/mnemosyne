@@ -10,6 +10,7 @@ import (
 	"sync"
 
 	"github.com/ali01/mnemosyne/internal/indexer"
+	"github.com/ali01/mnemosyne/internal/positionsync"
 	"github.com/ali01/mnemosyne/internal/store"
 )
 
@@ -21,25 +22,27 @@ type sseEvent struct {
 
 // Server is the HTTP server for Mnemosyne.
 type Server struct {
-	store     *store.Store
-	indexer   *indexer.IndexManager
-	homeGraph string
-	mux       *http.ServeMux
-	port      int
+	store        *store.Store
+	indexer      *indexer.IndexManager
+	positionSync *positionsync.Syncer
+	homeGraph    string
+	mux          *http.ServeMux
+	port         int
 
 	sseClients   map[chan sseEvent]struct{}
 	sseClientsMu sync.Mutex
 }
 
 // NewServer creates a new HTTP server.
-func NewServer(s *store.Store, idx *indexer.IndexManager, staticFS fs.FS, port int, homeGraph string) *Server {
+func NewServer(s *store.Store, idx *indexer.IndexManager, ps *positionsync.Syncer, staticFS fs.FS, port int, homeGraph string) *Server {
 	srv := &Server{
-		store:      s,
-		indexer:    idx,
-		homeGraph:  homeGraph,
-		mux:        http.NewServeMux(),
-		port:       port,
-		sseClients: make(map[chan sseEvent]struct{}),
+		store:        s,
+		indexer:      idx,
+		positionSync: ps,
+		homeGraph:    homeGraph,
+		mux:          http.NewServeMux(),
+		port:         port,
+		sseClients:   make(map[chan sseEvent]struct{}),
 	}
 
 	// API routes

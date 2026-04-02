@@ -552,6 +552,33 @@ func (s *Store) UpsertPositions(graphID int, positions []models.NodePosition) er
 	return tx.Commit()
 }
 
+// GetPositionsByGraph returns all positions for a graph, keyed by node ID.
+func (s *Store) GetPositionsByGraph(graphID int) (map[string]models.NodePosition, error) {
+	rows, err := s.db.Query(`SELECT node_id, x, y, z, locked FROM node_positions WHERE graph_id = ?`, graphID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	positions := make(map[string]models.NodePosition)
+	for rows.Next() {
+		var p models.NodePosition
+		if err := rows.Scan(&p.NodeID, &p.X, &p.Y, &p.Z, &p.Locked); err != nil {
+			return nil, err
+		}
+		p.GraphID = graphID
+		positions[p.NodeID] = p
+	}
+	return positions, rows.Err()
+}
+
+// GetPositionCount returns the number of positions stored for a graph.
+func (s *Store) GetPositionCount(graphID int) (int, error) {
+	var count int
+	err := s.db.QueryRow(`SELECT COUNT(*) FROM node_positions WHERE graph_id = ?`, graphID).Scan(&count)
+	return count, err
+}
+
 // --- Graph membership ---
 
 // ReplaceGraphMemberships replaces all graph memberships for a single node.

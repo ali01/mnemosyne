@@ -21,7 +21,7 @@ func newTestServer(t *testing.T) (*Server, *store.Store) {
 	require.NoError(t, err)
 	t.Cleanup(func() { s.Close() })
 
-	srv := NewServer(s, nil, nil, 0, "")
+	srv := NewServer(s, nil, nil, nil, 0, "")
 	return srv, s
 }
 

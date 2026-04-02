@@ -106,6 +106,10 @@ func (s *Server) handleUpdateGraphPosition(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	if s.positionSync != nil {
+		s.positionSync.MarkDirty(graphID)
+	}
+
 	writeJSON(w, http.StatusOK, map[string]string{"message": "Position updated"})
 }
 
@@ -130,6 +134,10 @@ func (s *Server) handleUpdateGraphPositions(w http.ResponseWriter, r *http.Reque
 	if err := s.store.UpsertPositions(graphID, positions); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to update positions"})
 		return
+	}
+
+	if s.positionSync != nil {
+		s.positionSync.MarkDirty(graphID)
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{

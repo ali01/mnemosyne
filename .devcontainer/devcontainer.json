@@ -1,0 +1,28 @@
+{
+  "name": "Mnemosyne Dev",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "runArgs": ["--cap-add=NET_ADMIN"],
+  "postStartCommand": "bash .devcontainer/init-firewall.sh",
+  "forwardPorts": [5555],
+  "portsAttributes": {
+    "5555": {
+      "label": "Mnemosyne",
+      "onAutoForward": "notify"
+    }
+  },
+  "remoteEnv": {
+    "GOPATH": "/home/vscode/go",
+    "PATH": "/usr/local/go/bin:/home/vscode/go/bin:${containerEnv:PATH}"
+  },
+  "postCreateCommand": "cd frontend && npm install",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "golang.go",
+        "svelte.svelte-vscode"
+      ]
+    }
+  }
+}

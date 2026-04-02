@@ -174,18 +174,6 @@ func TestGetNodeNotFound(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, w.Code)
 }
 
-func TestGetNodeContent(t *testing.T) {
-	srv, s := newTestServer(t)
-	seedGraph(t, s)
-
-	w := doRequest(srv.Handler(), "GET", "/api/v1/nodes/a/content", nil)
-	assert.Equal(t, http.StatusOK, w.Code)
-
-	var resp map[string]interface{}
-	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
-	assert.Equal(t, "All about aviation.", resp["content"])
-}
-
 // --- Positions ---
 
 func TestUpdateGraphPosition(t *testing.T) {

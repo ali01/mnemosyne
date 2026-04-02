@@ -2,6 +2,7 @@
   import GraphVisualizer from '$lib/components/GraphVisualizer.svelte';
   import SearchBar from '$lib/components/SearchBar.svelte';
   import { navigate } from '$lib/router';
+  import { openInObsidian } from '$lib/utils/obsidian';
   import { onMount, onDestroy } from 'svelte';
 
   export let graphId: number;
@@ -41,8 +42,8 @@
 
   function handleSearchSelect(event: CustomEvent) {
     const node = event.detail;
-    if (!node?.id || !currentGraph) return;
-    navigate(`${graphUrl(currentGraph)}/notes/${node.id}`);
+    if (!node?.file_path || !currentGraph) return;
+    openInObsidian(currentGraph.vault_name, node.file_path);
   }
 
   function switchGraph(event: Event) {
@@ -78,7 +79,7 @@
       </div>
     </div>
     {#key `${graphId}-${graphKey}`}
-      <GraphVisualizer graphId={String(graphId)} />
+      <GraphVisualizer graphId={String(graphId)} vaultName={currentGraph?.vault_name || ''} />
     {/key}
   {/if}
 </main>

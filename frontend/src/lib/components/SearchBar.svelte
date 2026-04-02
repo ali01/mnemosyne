@@ -10,6 +10,7 @@
   interface SearchResult {
     id: string;
     title: string;
+    file_path?: string;
     metadata?: {
       type?: string;
       [key: string]: any;

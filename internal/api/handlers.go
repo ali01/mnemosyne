@@ -165,22 +165,6 @@ func (s *Server) handleGetNode(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (s *Server) handleGetNodeContent(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-
-	node, err := s.store.GetNode(id)
-	if err != nil {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "Node not found"})
-		return
-	}
-
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"title":    node.Title,
-		"content":  node.Content,
-		"metadata": node.Metadata,
-	})
-}
-
 // --- Reindex ---
 
 func (s *Server) handleReindex(w http.ResponseWriter, r *http.Request) {

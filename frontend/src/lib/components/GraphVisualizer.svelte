@@ -1,12 +1,13 @@
 <script lang="ts">
     import { onMount, onDestroy, tick } from "svelte";
-    import { navigate } from "$lib/router";
     import { toast } from "$lib/stores/toast";
+    import { openInObsidian } from "$lib/utils/obsidian";
     import LoadingSpinner from "./LoadingSpinner.svelte";
     import type { Sigma as SigmaType } from "sigma";
     import type Graph from "graphology";
 
     export let graphId: string = '';
+    export let vaultName: string = '';
 
     let container: HTMLDivElement;
     let sigma: SigmaType;
@@ -89,6 +90,7 @@
                     size: 3,
                     label: node.title,
                     color: node.color || "#7b8cff",
+                    filePath: node.file_path,
                 });
             });
 
@@ -407,14 +409,12 @@
         let isDragging = false;
         let hasDragged = false;
 
-        // Node clicks — only navigate if the user didn't drag
+        // Node clicks — open in Obsidian if the user didn't drag
         sigma.on("clickNode", ({ node }) => {
             if (hasDragged) return;
-            if (/^[a-zA-Z0-9_-]+$/.test(node)) {
-                navigate(`/notes/${encodeURIComponent(node)}`);
-            } else {
-                console.error("Invalid node ID:", node);
-                toast.error("Unable to navigate to this node");
+            const attrs = graph.getNodeAttributes(node);
+            if (attrs.filePath && vaultName) {
+                openInObsidian(vaultName, attrs.filePath);
             }
         });
 

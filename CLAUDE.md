@@ -68,13 +68,14 @@ CRITICAL: When you encounter a file reference (e.g., ROADMAP.md), use your Read 
   - `frontend/src/lib/components/GraphVisualizer.svelte` - Main graph component (accepts graphId)
   - `frontend/src/lib/pages/GraphPage.svelte` - Graph page with SSE listener and graph selector
   - `frontend/src/lib/pages/GraphListPage.svelte` - Graph/vault picker landing page
-  - `frontend/src/lib/pages/NotePage.svelte` - Note detail page
   - `frontend/src/lib/router.ts` - Path-based router
+  - `frontend/src/lib/utils/obsidian.ts` - Obsidian URI builder for opening notes
 
 ### Frontend Routes
 - `/{vaultName}/{graphPath}` - Graph visualization (e.g., `/walros/memex`)
-- `/{vaultName}/{graphPath}/notes/{nodeId}` - Note viewer
 - `/` - Redirects to home graph, first available graph, or GraphListPage
+
+Node clicks open the note directly in Obsidian via `obsidian://open` URI scheme.
 
 ## Commands
 
@@ -166,7 +167,6 @@ Full-text search via FTS5 virtual table (`nodes_fts`) with automatic sync trigge
 | PUT | `/api/v1/graphs/{id}/positions` | Batch update positions for a graph |
 | PUT | `/api/v1/graphs/{id}/positions/{nodeId}` | Update single position |
 | GET | `/api/v1/nodes/{id}` | Single node metadata |
-| GET | `/api/v1/nodes/{id}/content` | Node markdown content |
 | POST | `/api/v1/reindex` | Trigger full re-index of all vaults |
 | GET | `/api/v1/events` | SSE stream (graph-updated with graphIds, graphs-changed) |
 

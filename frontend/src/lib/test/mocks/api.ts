@@ -72,15 +72,12 @@ export const mockSearchResults = {
 // API request handlers
 export const handlers = [
 	// Graph data endpoint
-	http.get('/api/v1/graph', ({ request }) => {
-		const url = new URL(request.url);
-		const level = url.searchParams.get('level');
-
+	http.get('/api/v1/graphs/:id', () => {
 		return HttpResponse.json(mockGraphData);
 	}),
 
-	// Search endpoint (corrected to match actual API)
-	http.get('/api/v1/nodes/search', ({ request }) => {
+	// Search endpoint
+	http.get('/api/v1/graphs/:id/search', ({ request }) => {
 		const url = new URL(request.url);
 		const query = url.searchParams.get('q');
 
@@ -88,7 +85,6 @@ export const handlers = [
 			return HttpResponse.json({ nodes: [] });
 		}
 
-		// Filter results based on query
 		const filteredNodes = mockSearchResults.nodes.filter(node =>
 			node.title.toLowerCase().includes(query.toLowerCase())
 		);
@@ -96,12 +92,24 @@ export const handlers = [
 		return HttpResponse.json({ nodes: filteredNodes });
 	}),
 
-	// Node position update endpoint with validation
-	http.put('/api/v1/nodes/:id/position', async ({ params, request }) => {
-		const { id } = params;
+	// Batch position update endpoint
+	http.put('/api/v1/graphs/:id/positions', async ({ request }) => {
+		const positions = await request.json() as any;
+
+		if (!Array.isArray(positions) || positions.length === 0) {
+			return new HttpResponse(
+				JSON.stringify({ error: 'No positions provided' }),
+				{ status: 400, headers: { 'Content-Type': 'application/json' } }
+			);
+		}
+
+		return HttpResponse.json({ message: 'Positions updated', count: positions.length });
+	}),
+
+	// Single position update endpoint
+	http.put('/api/v1/graphs/:id/positions/:nodeId', async ({ request }) => {
 		const position = await request.json() as any;
 
-		// Validate position data
 		if (!position || typeof position.x !== 'number' || typeof position.y !== 'number') {
 			return new HttpResponse(
 				JSON.stringify({ error: 'Invalid position data' }),
@@ -109,34 +117,11 @@ export const handlers = [
 			);
 		}
 
-		// Simulate success
-		return new HttpResponse(null, { status: 200 });
+		return HttpResponse.json({ message: 'Position updated' });
 	}),
 
-	// Error endpoints for testing error handling
-	http.get('/api/v1/graph/error', () => {
-		return new HttpResponse(null, { status: 500 });
+	// Graph list endpoint
+	http.get('/api/v1/graphs', () => {
+		return HttpResponse.json({ graphs: [] });
 	}),
-
-	http.get('/api/v1/nodes/search/error', () => {
-		return new HttpResponse(null, { status: 500 });
-	}),
-
-	// Network error simulation
-	http.get('/api/v1/graph/network-error', () => {
-		return HttpResponse.error();
-	}),
-
-	// Timeout simulation
-	http.get('/api/v1/graph/timeout', () => {
-		return new Promise(() => {}); // Never resolves
-	}),
-
-	// Validation error
-	http.get('/api/v1/graph/validation-error', () => {
-		return new HttpResponse(
-			JSON.stringify({ error: 'Invalid request parameters' }),
-			{ status: 400, headers: { 'Content-Type': 'application/json' } }
-		);
-	})
 ];

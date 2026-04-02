@@ -54,7 +54,6 @@ type Syncer struct {
 	graphs map[int]graphRef // graphID → ref
 	dirty  map[int]bool     // graphIDs with pending export
 	timer  *time.Timer
-	done   chan struct{}
 }
 
 // New creates a new position syncer.
@@ -63,7 +62,6 @@ func New(s *store.Store) *Syncer {
 		store:  s,
 		graphs: make(map[int]graphRef),
 		dirty:  make(map[int]bool),
-		done:   make(chan struct{}),
 	}
 }
 
@@ -136,9 +134,66 @@ func (s *Syncer) ImportIfEmpty(graphID int) error {
 	return nil
 }
 
+// ExportIfMissing exports positions from DB to JSON if the file doesn't exist yet.
+// Called on startup to back up pre-existing positions that were never exported.
+func (s *Syncer) ExportIfMissing(graphID int) error {
+	s.mu.Lock()
+	ref, ok := s.graphs[graphID]
+	s.mu.Unlock()
+	if !ok {
+		return fmt.Errorf("graph %d not registered", graphID)
+	}
+
+	path := filePath(ref.vaultPath, ref.rootPath)
+	if _, err := os.Stat(path); err == nil {
+		return nil // file already exists
+	}
+
+	count, err := s.store.GetPositionCount(graphID)
+	if err != nil {
+		return fmt.Errorf("check position count: %w", err)
+	}
+	if count == 0 {
+		return nil // nothing to export
+	}
+
+	if err := s.exportGraph(graphID, ref); err != nil {
+		return fmt.Errorf("initial export: %w", err)
+	}
+
+	log.Printf("positionsync: exported %d positions for graph %d to %s", count, graphID, path)
+	return nil
+}
+
+// Sync ensures positions are consistent between DB and JSON on startup.
+// Imports from JSON if DB is empty, exports to JSON if file is missing.
+func (s *Syncer) Sync(graphID int) error {
+	if err := s.ImportIfEmpty(graphID); err != nil {
+		return err
+	}
+	return s.ExportIfMissing(graphID)
+}
+
 // MarkDirty marks a graph as having unsaved position changes.
 // A debounced timer will flush dirty graphs to disk.
+// Automatically registers unknown graphs by querying the store.
 func (s *Syncer) MarkDirty(graphID int) {
+	s.mu.Lock()
+	_, ok := s.graphs[graphID]
+	s.mu.Unlock()
+
+	if !ok {
+		ref, err := s.resolveGraph(graphID)
+		if err != nil {
+			log.Printf("positionsync: cannot resolve graph %d for export: %v", graphID, err)
+			return
+		}
+		s.mu.Lock()
+		s.graphs[graphID] = ref
+		s.mu.Unlock()
+		log.Printf("positionsync: auto-registered graph %d (%s)", graphID, ref.rootPath)
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -150,6 +205,28 @@ func (s *Syncer) MarkDirty(graphID int) {
 	s.timer = time.AfterFunc(debounceDur, func() {
 		s.flush()
 	})
+}
+
+// resolveGraph looks up a graph's root path and vault path from the store.
+func (s *Syncer) resolveGraph(graphID int) (graphRef, error) {
+	info, err := s.store.GetGraphInfo(graphID)
+	if err != nil {
+		return graphRef{}, fmt.Errorf("get graph info: %w", err)
+	}
+	vaults, err := s.store.GetVaults()
+	if err != nil {
+		return graphRef{}, fmt.Errorf("get vaults: %w", err)
+	}
+	for _, v := range vaults {
+		if v.ID == info.VaultID {
+			return graphRef{
+				graphID:   graphID,
+				rootPath:  info.RootPath,
+				vaultPath: v.Path,
+			}, nil
+		}
+	}
+	return graphRef{}, fmt.Errorf("vault %d not found for graph %d", info.VaultID, graphID)
 }
 
 // Shutdown flushes all dirty positions and stops the syncer.

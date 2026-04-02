@@ -261,6 +261,152 @@ func TestExportSkipsEmptyPositions(t *testing.T) {
 	assert.True(t, os.IsNotExist(err), "no file for empty positions")
 }
 
+func TestExportIfMissing(t *testing.T) {
+	s := newTestStore(t)
+	vaultPath, graphID := setupGraph(t, s, "memex")
+
+	// DB has positions but no JSON file
+	require.NoError(t, s.UpsertPositions(graphID, []models.NodePosition{
+		{NodeID: "node-a", X: 10, Y: 20},
+		{NodeID: "node-b", X: 30, Y: 40},
+	}))
+
+	syncer := New(s)
+	syncer.Register(graphID, "memex", vaultPath)
+	require.NoError(t, syncer.ExportIfMissing(graphID))
+
+	// JSON file should now exist
+	path := FilePath(vaultPath, "memex")
+	data, err := os.ReadFile(path)
+	require.NoError(t, err)
+
+	var pf positionFile
+	require.NoError(t, json.Unmarshal(data, &pf))
+	assert.Len(t, pf.Positions, 2)
+	assert.Equal(t, 10.0, pf.Positions["node-a"].X)
+}
+
+func TestExportIfMissingSkipsWhenFileExists(t *testing.T) {
+	s := newTestStore(t)
+	vaultPath, graphID := setupGraph(t, s, "memex")
+
+	// Create JSON file first
+	dir := filepath.Join(vaultPath, dirName)
+	require.NoError(t, os.MkdirAll(dir, 0o755))
+	pf := positionFile{
+		MnemosyneVersion: 1,
+		RootPath:         "memex",
+		ExportedAt:       time.Now().UTC(),
+		Positions:        map[string]posXY{"node-a": {X: 999, Y: 999}},
+	}
+	data, _ := json.Marshal(pf)
+	require.NoError(t, os.WriteFile(FilePath(vaultPath, "memex"), data, 0o644))
+
+	// DB has different positions
+	require.NoError(t, s.UpsertPositions(graphID, []models.NodePosition{
+		{NodeID: "node-a", X: 1, Y: 2},
+	}))
+
+	syncer := New(s)
+	syncer.Register(graphID, "memex", vaultPath)
+	require.NoError(t, syncer.ExportIfMissing(graphID))
+
+	// Should NOT overwrite existing file
+	data2, err := os.ReadFile(FilePath(vaultPath, "memex"))
+	require.NoError(t, err)
+	var pf2 positionFile
+	require.NoError(t, json.Unmarshal(data2, &pf2))
+	assert.Equal(t, 999.0, pf2.Positions["node-a"].X)
+}
+
+func TestExportIfMissingSkipsEmptyDB(t *testing.T) {
+	s := newTestStore(t)
+	vaultPath, graphID := setupGraph(t, s, "memex")
+
+	// No positions in DB, no JSON file
+	syncer := New(s)
+	syncer.Register(graphID, "memex", vaultPath)
+	require.NoError(t, syncer.ExportIfMissing(graphID))
+
+	// No file should be created
+	_, err := os.Stat(FilePath(vaultPath, "memex"))
+	assert.True(t, os.IsNotExist(err))
+}
+
+func TestSyncImportsThenExports(t *testing.T) {
+	s := newTestStore(t)
+	vaultPath := t.TempDir()
+	vaultID, err := s.UpsertVault("vault", vaultPath)
+	require.NoError(t, err)
+
+	// Two graphs: one has a JSON file, one has DB positions
+	gidA, err := s.UpsertGraph(vaultID, "graphA", "alpha", "")
+	require.NoError(t, err)
+	gidB, err := s.UpsertGraph(vaultID, "graphB", "beta", "")
+	require.NoError(t, err)
+
+	// graphA: JSON file exists, DB empty → should import
+	dir := filepath.Join(vaultPath, dirName)
+	require.NoError(t, os.MkdirAll(dir, 0o755))
+	pf := positionFile{
+		MnemosyneVersion: 1,
+		RootPath:         "alpha",
+		ExportedAt:       time.Now().UTC(),
+		Positions:        map[string]posXY{"node-a": {X: 5, Y: 10}},
+	}
+	data, _ := json.Marshal(pf)
+	require.NoError(t, os.WriteFile(FilePath(vaultPath, "alpha"), data, 0o644))
+
+	// graphB: DB has positions, no JSON file → should export
+	require.NoError(t, s.UpsertPositions(gidB, []models.NodePosition{
+		{NodeID: "node-b", X: 20, Y: 30},
+	}))
+
+	syncer := New(s)
+	syncer.Register(gidA, "alpha", vaultPath)
+	syncer.Register(gidB, "beta", vaultPath)
+
+	require.NoError(t, syncer.Sync(gidA))
+	require.NoError(t, syncer.Sync(gidB))
+
+	// graphA: positions should be in DB (imported)
+	posA, err := s.GetPositionsByGraph(gidA)
+	require.NoError(t, err)
+	assert.Len(t, posA, 1)
+	assert.Equal(t, 5.0, posA["node-a"].X)
+
+	// graphB: JSON file should exist (exported)
+	dataB, err := os.ReadFile(FilePath(vaultPath, "beta"))
+	require.NoError(t, err)
+	var pfB positionFile
+	require.NoError(t, json.Unmarshal(dataB, &pfB))
+	assert.Equal(t, 20.0, pfB.Positions["node-b"].X)
+}
+
+func TestMarkDirtyAutoRegisters(t *testing.T) {
+	s := newTestStore(t)
+	vaultPath, graphID := setupGraph(t, s, "memex")
+
+	// Insert positions into DB
+	require.NoError(t, s.UpsertPositions(graphID, []models.NodePosition{
+		{NodeID: "node-a", X: 10, Y: 20},
+	}))
+
+	// Create syncer WITHOUT registering the graph
+	syncer := New(s)
+	syncer.MarkDirty(graphID)
+	syncer.Shutdown()
+
+	// Should have auto-registered and exported
+	path := FilePath(vaultPath, "memex")
+	data, err := os.ReadFile(path)
+	require.NoError(t, err)
+
+	var pf positionFile
+	require.NoError(t, json.Unmarshal(data, &pf))
+	assert.Equal(t, 10.0, pf.Positions["node-a"].X)
+}
+
 func TestMultipleGraphsExport(t *testing.T) {
 	s := newTestStore(t)
 	vaultPath := t.TempDir()

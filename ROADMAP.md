@@ -10,6 +10,7 @@
 - ✅ Interactive visualization with Sigma.js
 - ✅ Graph archiving with position preservation
 - ✅ CLI graph management (`mnemosyne graphs`)
+- ✅ Open in Obsidian — node clicks open files via `obsidian://` URI protocol
 - ✅ Full test suite (Go + frontend)
 
 ## Architecture
@@ -71,6 +72,7 @@ Vault Directory → fsnotify → Indexer → SQLite → net/http API → Embedde
 - Two-level ForceAtlas2 layout (meta-graph + per-community seeding)
 - Node hover highlighting with neighbor dimming
 - Drag with neighbor displacement
+- Open in Obsidian via `obsidian://open` URI protocol (node clicks + search results)
 - Dark theme UI with search, zoom controls
 - Path-based router with graph selector dropdown
 - SSE listener for live graph reload
@@ -86,7 +88,6 @@ Vault Directory → fsnotify → Indexer → SQLite → net/http API → Embedde
 ## What's Next
 
 ### Performance Optimization
-- Lazy loading for node content (don't load full markdown until clicked)
 - Pagination for large vaults (50K+ nodes)
 - Streaming graph responses instead of loading all in memory
 
@@ -97,7 +98,6 @@ Vault Directory → fsnotify → Indexer → SQLite → net/http API → Embedde
 
 ### UX
 - Keyboard shortcuts for navigation
-- Node details sidebar (show metadata without full page navigation)
 - Minimap for large graphs
 - Export graph as image
 - Groups legend overlay

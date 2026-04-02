@@ -43,6 +43,7 @@ Frontend at http://localhost:5173, API at http://localhost:5555.
 - **Obsidian-style filtering**: Filter which nodes appear using Obsidian search syntax (`path:`, `tag:`, `file:`, `[field:value]`, boolean operators)
 - **Group coloring**: Assign colors to node groups using the same search syntax
 - **Live updates**: File changes detected via fsnotify, graph updates via SSE
+- **Open in Obsidian**: Click any node to open the file directly in Obsidian via `obsidian://` URI protocol
 - **Interactive graph**: Sigma.js with WebGL rendering, force-directed layout with community-based spatial grouping
 - **Persistent layout**: Node positions saved per-graph to SQLite, persist across sessions
 - **Graph archiving**: Deleting a GRAPH.yaml preserves positions in the database; re-adding it restores the graph with its saved layout
@@ -128,7 +129,6 @@ Vault Directory → fsnotify watcher → Indexer → SQLite → net/http API →
 | PUT | `/api/v1/graphs/{id}/positions` | Batch update positions |
 | PUT | `/api/v1/graphs/{id}/positions/{nodeId}` | Update single position |
 | GET | `/api/v1/nodes/{id}` | Single node metadata |
-| GET | `/api/v1/nodes/{id}/content` | Node markdown content |
 | POST | `/api/v1/reindex` | Trigger full re-index of all vaults |
 | GET | `/api/v1/events` | SSE stream (graph-updated, graphs-changed) |
 

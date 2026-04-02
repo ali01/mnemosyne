@@ -5,7 +5,6 @@
   import ErrorBoundary from '$lib/components/ErrorBoundary.svelte';
   import { toast } from '$lib/stores/toast';
   import GraphPage from '$lib/pages/GraphPage.svelte';
-  import NotePage from '$lib/pages/NotePage.svelte';
   import GraphListPage from '$lib/pages/GraphListPage.svelte';
   import { onMount, onDestroy } from 'svelte';
 
@@ -22,7 +21,7 @@
   let eventSource: EventSource | null = null;
 
   function resolveGraphId(r: Route, graphList: GraphEntry[]): number | null {
-    if (r.type !== 'graph' && r.type !== 'note') return null;
+    if (r.type !== 'graph') return null;
     const match = graphList.find(g => g.vault_name === r.vaultName && g.root_path === r.graphPath);
     return match ? match.id : null;
   }
@@ -89,18 +88,12 @@
   });
 
   $: graphId = resolveGraphId($route, graphs);
-  $: currentGraph = graphId != null ? graphs.find(g => g.id === graphId) : null;
 </script>
 
 <Toast />
 <ErrorBoundary>
   {#if loaded}
-    {#if $route.type === 'note' && graphId != null}
-      <NotePage
-        graphUrl={currentGraph ? graphUrl(currentGraph) : '/'}
-        id={$route.noteId || ''}
-      />
-    {:else if $route.type === 'graph' && graphId != null}
+    {#if $route.type === 'graph' && graphId != null}
       <GraphPage {graphId} {graphs} {graphUrl} />
     {:else}
       <GraphListPage {graphs} {graphUrl} />

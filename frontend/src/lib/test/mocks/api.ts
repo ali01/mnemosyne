@@ -57,20 +57,16 @@ export const mockSearchResults = {
 		{
 			id: 'search1',
 			title: 'Search Result 1',
+			file_path: 'memex/search-result-1.md',
 			metadata: { type: 'core' }
 		},
 		{
 			id: 'search2',
 			title: 'Search Result 2',
+			file_path: 'memex/search-result-2.md',
 			metadata: { type: 'detail' }
 		}
 	]
-};
-
-export const mockNodeContent = {
-	id: TEST_CONSTANTS.NODE1_ID,
-	title: 'Test Node Content',
-	content: '# Test Content\n\nThis is a test note with [[Test Link]] and regular content.'
 };
 
 // API request handlers
@@ -98,25 +94,6 @@ export const handlers = [
 		);
 
 		return HttpResponse.json({ nodes: filteredNodes });
-	}),
-
-	// Node content endpoint
-	http.get('/api/v1/nodes/:id/content', ({ params }) => {
-		const { id } = params;
-
-		if (id === TEST_CONSTANTS.NODE1_ID) {
-			return HttpResponse.json(mockNodeContent);
-		}
-
-		if (id === 'nonexistent') {
-			return new HttpResponse(null, { status: 404 });
-		}
-
-		return HttpResponse.json({
-			id,
-			title: `Node ${id}`,
-			content: `# Node ${id}\n\nContent for node ${id}`
-		});
 	}),
 
 	// Node position update endpoint with validation

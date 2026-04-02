@@ -1,20 +1,13 @@
 import { writable } from 'svelte/store';
 
 export interface Route {
-  type: 'home' | 'graph' | 'note';
+  type: 'home' | 'graph';
   vaultName?: string;
   graphPath?: string;
-  noteId?: string;
 }
 
 function parsePath(): Route {
   const path = window.location.pathname;
-
-  // /vaultName/graphPath/notes/nodeId
-  const noteMatch = path.match(/^\/([^/]+)\/([^/]+)\/notes\/([^/]+)$/);
-  if (noteMatch) {
-    return { type: 'note', vaultName: decodeURIComponent(noteMatch[1]), graphPath: decodeURIComponent(noteMatch[2]), noteId: noteMatch[3] };
-  }
 
   // /vaultName/graphPath
   const graphMatch = path.match(/^\/([^/]+)\/([^/]+)$/);

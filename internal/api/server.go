@@ -58,9 +58,8 @@ func NewServer(s *store.Store, idx *indexer.IndexManager, ps *positionsync.Synce
 	srv.mux.HandleFunc("PUT /api/v1/graphs/{id}/positions", srv.handleUpdateGraphPositions)
 	srv.mux.HandleFunc("PUT /api/v1/graphs/{id}/positions/{nodeId}", srv.handleUpdateGraphPosition)
 
-	// Node content (not graph-scoped)
+	// Node metadata (not graph-scoped)
 	srv.mux.HandleFunc("GET /api/v1/nodes/{id}", srv.handleGetNode)
-	srv.mux.HandleFunc("GET /api/v1/nodes/{id}/content", srv.handleGetNodeContent)
 
 	// Reindex
 	srv.mux.HandleFunc("POST /api/v1/reindex", srv.handleReindex)
